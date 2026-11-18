@@ -595,8 +595,9 @@ openrouter_model_name = ""
 
 # Client billing. OpenRouter reports what each request cost (USD); the task's
 # script.json then gets an "llm_usage" block with that cost and the client price
-# derived from these two settings.
-billing_markup_percent = 0
+# derived from these two settings: cost plus the markup, never below the
+# minimum charge, rounded up to the next cent.
+billing_markup_percent = 50
 billing_minimum_charge_usd = 0
 
 # API Route, an OpenAI-compatible multi-model routing platform.

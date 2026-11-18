@@ -11,12 +11,15 @@ Recording is best effort: a malformed usage block must never fail generation.
 
 from __future__ import annotations
 
+import math
 from contextvars import ContextVar
 from typing import Any
 
 from loguru import logger
 
 from app.config import config
+
+DEFAULT_MARKUP_PERCENT = 50.0
 
 _records: ContextVar[list[dict] | None] = ContextVar("llm_usage_records", default=None)
 
@@ -75,13 +78,16 @@ def compute_client_price(
     cost_usd: float,
     markup_percent: float,
     minimum_charge_usd: float,
-) -> float | None:
+) -> float:
     """Turn what the provider charged us into what we charge the client.
 
-    Returns the client price in USD, or None when no price should be quoted.
+    The cost is marked up by ``markup_percent`` (50 turns 1.00 into 1.50), raised
+    to ``minimum_charge_usd`` when it falls below it, and rounded up to the next
+    cent so a small job is never quoted below what it cost.
     """
-    # TODO(human): implement the agency pricing rule.
-    return None
+    price = max(cost_usd * (1 + markup_percent / 100), minimum_charge_usd)
+    # Round away binary float noise first, so 0.03 does not become 0.04.
+    return math.ceil(round(price * 100, 6)) / 100
 
 
 def _setting(key: str, default: float) -> float:
@@ -112,7 +118,7 @@ def summarize(records: list[dict] | None = None) -> dict | None:
         "calls": list(records),
     }
     if cost_usd is not None:
-        summary["markup_percent"] = _setting("billing_markup_percent", 0.0)
+        summary["markup_percent"] = _setting("billing_markup_percent", DEFAULT_MARKUP_PERCENT)
         summary["minimum_charge_usd"] = _setting("billing_minimum_charge_usd", 0.0)
         summary["client_price_usd"] = compute_client_price(
             cost_usd, summary["markup_percent"], summary["minimum_charge_usd"]

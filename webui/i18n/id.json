@@ -97,6 +97,8 @@
     "Task Subject": "Topik",
     "Task Updated At": "Diperbarui",
     "Task Progress": "Progres",
+    "Task Billing": "Biaya → Harga",
+    "Task Billing Help": "Biaya permintaan LLM untuk tugas ini (USD, seperti dilaporkan OpenRouter) dan harga yang ditawarkan ke klien. Tidak termasuk suara, footage, dan musik.",
     "Task Actions": "Tindakan",
     "Play Video": "Putar",
     "Play": "Putar",

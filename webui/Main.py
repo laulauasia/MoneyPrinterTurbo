@@ -826,6 +826,24 @@ def _format_task_subject(subject, max_length=30):
     return f"{subject[:max_length]}..."
 
 
+def _format_usd(amount) -> str:
+    # LLM requests often cost a fraction of a cent; two decimals would show $0.00.
+    return f"${amount:.4f}" if 0 < amount < 0.01 else f"${amount:.2f}"
+
+
+def _format_task_billing(llm_usage) -> str:
+    """Show what the task's LLM requests cost and the price quoted to the client."""
+    if not isinstance(llm_usage, dict):
+        return "-"
+    cost = llm_usage.get("cost_usd")
+    price = llm_usage.get("client_price_usd")
+    if isinstance(cost, bool) or not isinstance(cost, (int, float)):
+        return "-"
+    if isinstance(price, bool) or not isinstance(price, (int, float)):
+        return _format_usd(cost)
+    return f"{_format_usd(cost)} → {_format_usd(price)}"
+
+
 def _safe_load_task_script(task_path):
     script_file = os.path.join(task_path, "script.json")
     if not os.path.isfile(script_file):
@@ -1055,6 +1073,7 @@ def _scan_history_tasks(limit=30):
                 "mtime": mtime,
                 "task_path": task_path,
                 "video_file": video_file,
+                "llm_usage": script_data.get("llm_usage"),
                 "source": "history",
             }
         )
@@ -1124,6 +1143,7 @@ def _collect_task_summaries(limit=20):
             "mtime": task_mtime,
             "task_path": task_path,
             "video_file": video_file,
+            "llm_usage": history_task.get("llm_usage"),
             "source": "runtime",
         }
 
@@ -1149,6 +1169,7 @@ def _collect_task_summaries(limit=20):
             or history_task.get("mtime", datetime.now().timestamp()),
             "task_path": task_path,
             "video_file": history_task.get("video_file", ""),
+            "llm_usage": history_task.get("llm_usage"),
             "source": "active",
         }
 
@@ -1286,14 +1307,19 @@ def _build_video_download_name(subject, index, total):
     return f"{safe_subject}{suffix}.mp4"
 
 
+# Status, updated at, subject, progress, billing, actions.
+_TASK_TABLE_COLUMNS = [1.1, 1.6, 2.3, 0.8, 1.4, 1.6]
+
+
 def _render_task_table(filtered_tasks, key_prefix):
     with st.container(key=f"task_table_header_{key_prefix}"):
-        header_cols = st.columns([1.1, 1.7, 3.0, 0.8, 1.6], vertical_alignment="center")
+        header_cols = st.columns(_TASK_TABLE_COLUMNS, vertical_alignment="center")
         header_cols[0].caption(tr("Task Status"))
         header_cols[1].caption(tr("Task Updated At"))
         header_cols[2].caption(tr("Task Subject"))
         header_cols[3].caption(tr("Task Progress"))
-        header_cols[4].caption(tr("Task Actions"))
+        header_cols[4].caption(tr("Task Billing"), help=tr("Task Billing Help"))
+        header_cols[5].caption(tr("Task Actions"))
 
     if not filtered_tasks:
         st.info(tr("No Tasks Match Filter"))
@@ -1319,15 +1345,16 @@ def _render_task_table(filtered_tasks, key_prefix):
                 key=f"task_row_{key_prefix}_{safe_task_key}", border=True
             ):
                 row_cols = st.columns(
-                    [1.1, 1.7, 3.0, 0.8, 1.6],
+                    _TASK_TABLE_COLUMNS,
                     vertical_alignment="center",
                 )
                 row_cols[0].write(_task_state_label(task["state"], has_video))
                 row_cols[1].write(_format_task_time(task["mtime"]))
                 row_cols[2].write(_format_task_subject(task["subject"]))
                 row_cols[3].write(f"{task['progress']}%")
+                row_cols[4].write(_format_task_billing(task.get("llm_usage")))
 
-                action_cols = row_cols[4].columns(
+                action_cols = row_cols[5].columns(
                     4,
                     vertical_alignment="center",
                     gap="small",

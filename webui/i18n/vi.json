@@ -97,6 +97,8 @@
     "Task Subject": "Chủ đề",
     "Task Updated At": "Cập nhật",
     "Task Progress": "Tiến độ",
+    "Task Billing": "Chi phí → Giá",
+    "Task Billing Help": "Chi phí các yêu cầu LLM của tác vụ này (USD, theo OpenRouter) và giá báo cho khách hàng. Không bao gồm giọng đọc, cảnh quay và nhạc.",
     "Task Actions": "Thao tác",
     "Play Video": "Phát",
     "Play": "Phát",

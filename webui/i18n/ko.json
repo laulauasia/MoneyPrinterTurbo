@@ -97,6 +97,8 @@
     "Task Subject": "주제",
     "Task Updated At": "업데이트",
     "Task Progress": "진행률",
+    "Task Billing": "비용 → 견적가",
+    "Task Billing Help": "이 작업의 LLM 요청 비용(USD, OpenRouter 보고 기준)과 고객에게 제시하는 가격입니다. 음성, 영상 소재, 음악은 포함되지 않습니다.",
     "Task Actions": "동작",
     "Play Video": "재생",
     "Play": "재생",

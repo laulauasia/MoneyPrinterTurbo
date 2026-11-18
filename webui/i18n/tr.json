@@ -97,6 +97,8 @@
     "Task Subject": "Konu",
     "Task Updated At": "Güncellendi",
     "Task Progress": "İlerleme",
+    "Task Billing": "Maliyet → Fiyat",
+    "Task Billing Help": "Bu görevin LLM isteklerinin maliyeti (USD, OpenRouter'ın bildirdiği) ve müşteriye teklif edilen fiyat. Ses, görüntü ve müzik dahil değildir.",
     "Task Actions": "İşlemler",
     "Play Video": "Oynat",
     "Play": "Oynat",

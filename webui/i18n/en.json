@@ -102,6 +102,8 @@
     "Task Subject": "Subject",
     "Task Updated At": "Updated",
     "Task Progress": "Progress",
+    "Task Billing": "Cost → Price",
+    "Task Billing Help": "What the LLM requests for this task cost (USD, as reported by OpenRouter) and the price quoted to the client. Voice, footage and music are not included.",
     "Task Actions": "Actions",
     "Play Video": "Play",
     "Play": "Play",

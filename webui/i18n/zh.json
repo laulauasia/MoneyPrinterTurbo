@@ -102,6 +102,8 @@
     "Task Subject": "任务主题",
     "Task Updated At": "更新时间",
     "Task Progress": "进度",
+    "Task Billing": "成本 → 报价",
+    "Task Billing Help": "该任务的大模型请求成本（美元，由 OpenRouter 返回）以及给客户的报价。不包含配音、素材和音乐费用。",
     "Task Actions": "操作",
     "Play Video": "播放",
     "Play": "播放",

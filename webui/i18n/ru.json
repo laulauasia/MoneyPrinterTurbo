@@ -97,6 +97,8 @@
     "Task Subject": "Тема",
     "Task Updated At": "Обновлено",
     "Task Progress": "Ход выполнения",
+    "Task Billing": "Затраты → Цена",
+    "Task Billing Help": "Сколько стоили LLM-запросы этой задачи (USD, по данным OpenRouter) и цена для клиента. Озвучка, видеоматериалы и музыка не включены.",
     "Task Actions": "Действия",
     "Play Video": "Воспроизвести",
     "Play": "Воспроизвести",

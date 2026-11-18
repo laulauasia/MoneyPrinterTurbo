@@ -97,6 +97,8 @@
     "Task Subject": "Sujet",
     "Task Updated At": "Mis à jour",
     "Task Progress": "Progression",
+    "Task Billing": "Coût → Prix",
+    "Task Billing Help": "Ce qu'ont coûté les requêtes LLM de cette tâche (USD, selon OpenRouter) et le prix proposé au client. Voix, séquences et musique non incluses.",
     "Task Actions": "Actions",
     "Play Video": "Lire",
     "Play": "Lire",

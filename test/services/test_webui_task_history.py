@@ -269,3 +269,68 @@ def test_find_final_task_video_ignores_directories_and_broken_links(tmp_path):
     assert find_final_task_video(str(tmp_path)) == ""
     (tmp_path / "final-3.mp4").touch()
     assert find_final_task_video(str(tmp_path)) == str(tmp_path / "final-3.mp4")
+
+
+def _load_webui_functions(names, namespace):
+    tree = ast.parse(WEBUI_MAIN.read_text(encoding="utf-8"))
+    selected = [
+        node
+        for node in tree.body
+        if isinstance(node, ast.FunctionDef) and node.name in names
+    ]
+    module = ast.fix_missing_locations(ast.Module(body=selected, type_ignores=[]))
+    exec(compile(module, str(WEBUI_MAIN), "exec"), namespace)
+    return namespace
+
+
+def test_task_billing_shows_cost_and_client_price():
+    """The task table shows what the LLM cost and what the client is quoted."""
+    format_billing = _load_webui_functions(
+        {"_format_usd", "_format_task_billing"}, {}
+    )["_format_task_billing"]
+
+    assert (
+        format_billing({"cost_usd": 0.0021, "client_price_usd": 0.01})
+        == "$0.0021 → $0.01"
+    )
+    assert format_billing({"cost_usd": 1.2, "client_price_usd": 1.8}) == "$1.20 → $1.80"
+    assert format_billing({"cost_usd": 0, "client_price_usd": 0.0}) == "$0.00 → $0.00"
+    assert format_billing({"cost_usd": 0.5, "client_price_usd": None}) == "$0.50"
+
+
+def test_task_billing_is_blank_without_a_reported_cost():
+    """Old tasks and providers that report no price must not show a fake $0."""
+    format_billing = _load_webui_functions(
+        {"_format_usd", "_format_task_billing"}, {}
+    )["_format_task_billing"]
+
+    assert format_billing(None) == "-"
+    assert format_billing("corrupt") == "-"
+    assert format_billing({"cost_usd": None, "client_price_usd": None}) == "-"
+    assert format_billing({"cost_usd": "1.5"}) == "-"
+
+
+def test_history_scan_carries_llm_usage_from_script_json(tmp_path):
+    """Billing data saved by the pipeline reaches the task table rows."""
+    tasks_root = tmp_path / "tasks"
+    task_dir = tasks_root / "billed-task"
+    task_dir.mkdir(parents=True)
+    usage = {"cost_usd": 0.02, "client_price_usd": 0.03}
+    (task_dir / "script.json").write_text(
+        json.dumps({"script": "hello", "llm_usage": usage}), encoding="utf-8"
+    )
+    namespace = _load_webui_functions(
+        {"_safe_load_task_script", "_scan_history_tasks"},
+        {
+            "os": os,
+            "json": json,
+            "logger": MagicMock(),
+            "utils": SimpleNamespace(task_dir=lambda: str(tasks_root)),
+            "const": const,
+            "_find_final_task_video": lambda _task_path: "",
+        },
+    )
+
+    history = namespace["_scan_history_tasks"]()
+
+    assert history[0]["llm_usage"] == usage

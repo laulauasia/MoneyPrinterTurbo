@@ -17,6 +17,7 @@ from app.services import (
     metaso_minimax,
     muapi,
     ofox,
+    openrouter_video,
     useapi,
     volcengine_seedance,
 )
@@ -98,6 +99,7 @@ def configured_material_providers(settings, groups, codex_connected=False):
         {
             "metaso_minimax": metaso_minimax.is_enabled(settings),
             "ofox": ofox.is_enabled(settings),
+            "openrouter": openrouter_video.is_enabled(settings),
             "volcengine_seedance": volcengine_seedance.is_enabled(settings),
             "infistar": infistar_video.is_enabled(settings),
             "jalapeno": jalapeno_video.is_enabled(settings),

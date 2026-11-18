@@ -31,6 +31,7 @@ from app.services import (
     metaso_minimax,
     muapi,
     ofox,
+    openrouter_video,
     sonilo,
     subtitle,
     task_artifacts,
@@ -105,7 +106,7 @@ _SUPPORTED_VIDEO_SOURCES = frozenset({
     "pexels", "pixabay", "coverr", "local", "wavespeed",
     "volcengine_seedance", "ofox", "metaso_minimax", "muapi", "useapi",
     "loomloom", "openai_image", "codex_image", "useapi_image", "infistar",
-    "jalapeno",
+    "jalapeno", "openrouter",
 })
 
 
@@ -908,6 +909,15 @@ def get_video_materials(
                 details=details,
             )
             return None
+        except openrouter_video.OpenRouterVideoError as exc:
+            # An unconfirmed or undownloaded paid job keeps its id in the task
+            # state so it can be found in the OpenRouter dashboard.
+            remote_task_id = str(getattr(exc, "task_id", "") or "").strip()
+            details = (
+                {"openrouter_video_job_id": remote_task_id} if remote_task_id else None
+            )
+            _mark_task_failed(task_id, "materials", str(exc), details=details)
+            return None
         except metaso_minimax.MetasoMiniMaxError as exc:
             # 秘塔任务与方舟任务使用不同的恢复入口和字段名，不能合并成一个
             # 模糊的 remote_task_id。保留明确 Provider 前缀便于 API、WebUI
@@ -1662,6 +1672,17 @@ def _run_pipeline(
 
     if (
         stop_at in {"materials", "video"}
+        and params.video_source == "openrouter"
+        and not openrouter_video.is_enabled()
+    ):
+        return _mark_task_failed(
+            task_id,
+            "preflight",
+            "OpenRouter video generation requires an OpenRouter API key",
+        )
+
+    if (
+        stop_at in {"materials", "video"}
         and params.video_source == "metaso_minimax"
         and not metaso_minimax.is_enabled()
     ):
@@ -1910,6 +1931,11 @@ def _run_pipeline(
         **({"jalapeno_video_endpoint": jalapeno_video_endpoint}
            if jalapeno_video_endpoint is not None else {}),
     )
+    # Paid clips are billed even when a later clip fails, so the usage block
+    # is refreshed before the outcome of the stage is checked.
+    usage = llm_usage.summarize()
+    if usage:
+        task_artifacts.patch_script_data(task_id, llm_usage=usage)
     if not downloaded_videos:
         return _mark_task_failed(
             task_id,

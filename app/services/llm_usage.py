@@ -61,6 +61,7 @@ def record(llm_provider: str, response: Any) -> None:
 
         records.append(
             {
+                "kind": "llm",
                 "provider": llm_provider,
                 "model": str(_field(response, "model") or ""),
                 "prompt_tokens": int(prompt_tokens or 0),
@@ -72,6 +73,29 @@ def record(llm_provider: str, response: Any) -> None:
         )
     except Exception as exc:
         logger.warning(f"could not record llm usage: {type(exc).__name__}")
+
+
+def record_cost(kind: str, provider: str, model: str, cost_usd: Any) -> None:
+    """Store the reported cost of a paid job that is not a chat completion.
+
+    Used for OpenRouter video clips, so the task total covers them as well.
+    """
+    try:
+        records = _records.get()
+        if records is None:
+            return
+        records.append(
+            {
+                "kind": kind,
+                "provider": provider,
+                "model": model,
+                "prompt_tokens": 0,
+                "completion_tokens": 0,
+                "cost_usd": _number(cost_usd),
+            }
+        )
+    except Exception as exc:
+        logger.warning(f"could not record {kind} cost: {type(exc).__name__}")
 
 
 def compute_client_price(

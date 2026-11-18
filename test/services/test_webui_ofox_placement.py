@@ -27,6 +27,7 @@ def test_ai_video_source_order_keeps_ofox_below_metaso():
     assert groups["ai_video"] == (
         "metaso_minimax", "ofox", "loomloom", "volcengine_seedance", "infistar", "jalapeno", "wavespeed", "muapi",
         "useapi",
+        "openrouter",
     )
     assert groups["stock_video"] == ("pexels", "pixabay", "coverr")
 
@@ -61,6 +62,7 @@ def test_ofox_settings_order_and_saved_values(language):
             "Metaso MiniMax H3", "OFox AI Video", "Shengsuan Cloud AI Video",
             "Volcano Engine Seedance", "Infistar AI Video", "Jalapeno Cloud AI Video",
             "WaveSpeed AI Video", "MuAPI AI Video", "useapi.net AI Video",
+            "OpenRouter AI Video",
         )]
         assert providers.value == "ofox"
         assert not any(item.key in {

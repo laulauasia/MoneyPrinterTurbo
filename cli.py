@@ -44,6 +44,7 @@ _CLI_VIDEO_SOURCES = (
     "wavespeed",
     "volcengine_seedance",
     "ofox",
+    "openrouter",
     "infistar",
     "jalapeno",
     "metaso_minimax",
@@ -413,6 +414,14 @@ Batch manifests:
         help=(
             "confirm that OFox video generation creates paid tasks; required "
             "with --video-source ofox for materials or video output"
+        ),
+    )
+    material_group.add_argument(
+        "--confirm-openrouter-charge",
+        action="store_true",
+        help=(
+            "confirm that OpenRouter video generation creates paid jobs; "
+            "required with --video-source openrouter for materials or video output"
         ),
     )
     material_group.add_argument(
@@ -792,6 +801,15 @@ Batch manifests:
         parser.error(
             "--confirm-seedance-charge is required with "
             "--video-source volcengine_seedance"
+        )
+    if (
+        not args.batch_file
+        and args.video_source == "openrouter"
+        and stage_requires_materials
+        and not args.confirm_openrouter_charge
+    ):
+        parser.error(
+            "--confirm-openrouter-charge is required with --video-source openrouter"
         )
     if (
         not args.batch_file

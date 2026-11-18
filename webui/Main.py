@@ -57,6 +57,7 @@ from app.services import (
     infistar_video,
     jalapeno_video,
     ofox,
+    openrouter_video,
     subtitle,
     useapi,
     video,
@@ -146,6 +147,7 @@ VIDEO_SOURCE_GROUPS = {
         "wavespeed",
         "muapi",
         "useapi",
+        "openrouter",
     ),
     "ai_image": ("openai_image", "codex_image", "useapi_image"),
     "local": ("local",),
@@ -779,6 +781,7 @@ def _initialize_session_state():
         "infistar_confirm_charge": False,
         "jalapeno_confirm_charge": False,
         "ofox_confirm_charge": False,
+        "openrouter_confirm_charge": False,
         "metaso_minimax_confirm_charge": False,
         "muapi_confirm_charge": False,
         "useapi_confirm_charge": False,
@@ -3441,6 +3444,7 @@ def _material_provider_labels():
         "coverr": tr("Coverr"),
         "metaso_minimax": tr("Metaso MiniMax H3"),
         "ofox": tr("OFox AI Video"),
+        "openrouter": tr("OpenRouter AI Video"),
         "loomloom": tr("Shengsuan Cloud AI Video"),
         "volcengine_seedance": tr("Volcano Engine Seedance"),
         "infistar": tr("Infistar AI Video"),
@@ -3747,6 +3751,45 @@ def _render_material_provider_settings(provider):
         )
         if metaso_resolution is not None:
             _set_runtime_config("app", "metaso_minimax_resolution", metaso_resolution)
+    elif provider == "openrouter":
+        st.markdown("**OpenRouter**")
+        openrouter_video_api_key = st.text_input(
+            tr("OpenRouter Video API Key"),
+            value=str(app_settings.get("openrouter_video_api_key", "") or ""),
+            type="password",
+            key="openrouter_video_api_key_input",
+            on_change=_save_settings_change,
+            args=(
+                "app",
+                "openrouter_video_api_key",
+                "openrouter_video_api_key_input",
+                lambda value: value.strip(),
+            ),
+        )
+        _set_runtime_config(
+            "app", "openrouter_video_api_key", openrouter_video_api_key.strip()
+        )
+        openrouter_video_model = st.text_input(
+            tr("OpenRouter Text-to-Video Model"),
+            value=str(
+                app_settings.get(
+                    "openrouter_video_model",
+                    openrouter_video.DEFAULT_MODEL_ID,
+                )
+                or openrouter_video.DEFAULT_MODEL_ID
+            ),
+            key="openrouter_video_model_input",
+            on_change=_save_settings_change,
+            args=(
+                "app",
+                "openrouter_video_model",
+                "openrouter_video_model_input",
+                lambda value: value.strip(),
+            ),
+        )
+        _set_runtime_config(
+            "app", "openrouter_video_model", openrouter_video_model.strip()
+        )
     elif provider == "ofox":
         st.markdown("**OfoxAI**")
         st.caption(f"[OfoxAI]({OFOX_REFERRAL_URL}) · {tr('OFox AI Video Help')}")
@@ -6123,6 +6166,7 @@ def _render_video_settings(panel, params):
                 "infistar": tr("Infistar AI Video"),
                 "jalapeno": tr("Jalapeno Cloud AI Video"),
                 "ofox": tr("OFox AI Video"),
+                "openrouter": tr("OpenRouter AI Video"),
                 "metaso_minimax": tr("Metaso MiniMax H3"),
                 "muapi": tr("MuAPI AI Video"),
                 "useapi": tr("useapi.net AI Video"),
@@ -6502,6 +6546,8 @@ def _render_video_settings(panel, params):
                 st.checkbox(tr("Confirm Jalapeno Cloud Charge"), key="jalapeno_confirm_charge")
             if params.video_source == "ofox":
                 _render_ofox_video_settings(params)
+            if params.video_source == "openrouter":
+                _render_openrouter_video_settings(params)
             if params.video_source == "metaso_minimax":
                 _render_metaso_minimax_video_settings(params)
             if params.video_source == "muapi":
@@ -6722,6 +6768,30 @@ def _render_ofox_video_settings(params):
         tr("Confirm OFox Charge"),
         key="ofox_confirm_charge",
         help=tr("Confirm OFox Charge Help"),
+    )
+
+
+def _render_openrouter_video_settings(params):
+    """Show the estimated number of paid clips and require a charge confirmation."""
+    clip_duration = max(int(params.video_clip_duration or 1), 1)
+    video_count = max(int(params.video_count or 1), 1)
+    estimated_range = _estimate_voiceover_duration_range(
+        str(params.video_script or ""), params.voice_rate
+    )
+    if estimated_range:
+        min_clips = max(math.ceil(estimated_range[0] * video_count / clip_duration), 1)
+        max_clips = max(
+            math.ceil(estimated_range[1] * video_count / clip_duration), min_clips
+        )
+        st.warning(
+            tr("OpenRouter Billing Notice").format(min=min_clips, max=max_clips)
+        )
+    else:
+        st.warning(tr("OpenRouter Billing Notice Without Script"))
+    st.checkbox(
+        tr("Confirm OpenRouter Charge"),
+        key="openrouter_confirm_charge",
+        help=tr("Confirm OpenRouter Charge Help"),
     )
 
 
@@ -9285,6 +9355,7 @@ def _render_generation_controls(
             "wavespeed",
             "volcengine_seedance",
             "ofox",
+            "openrouter",
             "metaso_minimax",
             "muapi",
             "useapi",
@@ -9374,6 +9445,22 @@ def _render_generation_controls(
                 _remove_active_generation_task(task_id)
                 st.error(str(exc))
                 st.stop()
+
+        if params.video_source == "openrouter" and not (
+            openrouter_video.is_enabled(
+                config.snapshot_config_with_pending(config.app)
+            )
+        ):
+            _remove_active_generation_task(task_id)
+            st.error(tr("Please Enter the OpenRouter API Key"))
+            st.stop()
+
+        if params.video_source == "openrouter" and not st.session_state.get(
+            "openrouter_confirm_charge", False
+        ):
+            _remove_active_generation_task(task_id)
+            st.error(tr("Confirm OpenRouter Charge Required"))
+            st.stop()
 
         if params.video_source == "ofox" and not (
             ofox.is_enabled(config.snapshot_config_with_pending(config.app))

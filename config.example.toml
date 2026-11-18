@@ -148,6 +148,20 @@ volcengine_seedance_poll_interval = 5
 volcengine_seedance_run_timeout = 1800
 volcengine_seedance_watermark = false
 
+# OpenRouter (https://openrouter.ai) text-to-video through its asynchronous
+# /videos API. Every clip is a paid job; its reported cost is added to the
+# task's "llm_usage" block for client billing.
+# Leave the key empty to reuse openrouter_api_key (the LLM setting) or the
+# OPENROUTER_API_KEY environment variable.
+openrouter_video_api_key = ""
+openrouter_video_base_url = "https://openrouter.ai/api/v1"
+# Any id from https://openrouter.ai/api/v1/videos/models
+openrouter_video_model = "bytedance/seedance-2.0-fast"
+# Supported resolutions depend on the model.
+openrouter_video_resolution = "720p"
+openrouter_video_poll_interval = 10
+openrouter_video_run_timeout = 1800
+
 # OFox (https://ofox.ai) exposes multiple text-to-video models (Seedance, Wan,
 # and more) behind one API key using an asynchronous /v1/videos API.
 # Create an API key at https://ofox.ai

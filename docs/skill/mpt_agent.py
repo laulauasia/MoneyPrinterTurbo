@@ -34,6 +34,7 @@ SUPPORTED_SOURCES = {
     "wavespeed",
     "volcengine_seedance",
     "ofox",
+    "openrouter",
     "metaso_minimax",
     "muapi",
     "useapi",
@@ -494,6 +495,18 @@ def missing_config(config_path: Path, cli_args: list[str]) -> tuple[str, list[st
             missing.append("ofox_api_key")
         if not has_cli_option(cli_args, "--confirm-ofox-charge"):
             missing.append("confirm_ofox_charge")
+    elif source == "openrouter":
+        # Same key order as the runtime provider: the dedicated video key, the
+        # OpenRouter LLM key, then the OPENROUTER_API_KEY environment variable.
+        value = (
+            _plain_config_value(text, "openrouter_video_api_key").strip()
+            or _plain_config_value(text, "openrouter_api_key").strip()
+            or os.environ.get("OPENROUTER_API_KEY", "").strip()
+        )
+        if not _has_configured_value(value):
+            missing.append("openrouter_video_api_key")
+        if not has_cli_option(cli_args, "--confirm-openrouter-charge"):
+            missing.append("confirm_openrouter_charge")
     elif source == "metaso_minimax":
         # 秘塔 Key 与 MiniMax 官方 LLM Key 不互通，Skill 必须沿用运行时的
         # 独立配置优先级，不能因为已经配置 minimax_api_key 就误判为可用。
@@ -634,6 +647,12 @@ def report_missing_config(provider: str, missing: list[str]) -> int:
         print("OFOX_API_KEY_ENV=MPT_OFOX_API_KEY")
     if "confirm_ofox_charge" in missing:
         print("OFOX_CHARGE_CONFIRMATION_REQUIRED=--confirm-ofox-charge")
+    if "openrouter_video_api_key" in missing:
+        print("OPENROUTER_API_KEY_URL=https://openrouter.ai/settings/keys")
+    if "confirm_openrouter_charge" in missing:
+        print(
+            "OPENROUTER_CHARGE_CONFIRMATION_REQUIRED=--confirm-openrouter-charge"
+        )
     if "metaso_minimax_api_key" in missing:
         print("METASO_MINIMAX_API_KEY_ENV=MPT_METASO_MINIMAX_API_KEY")
     if "confirm_metaso_minimax_charge" in missing:

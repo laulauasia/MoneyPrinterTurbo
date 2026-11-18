@@ -33,6 +33,7 @@ from app.services import (
     metaso_minimax,
     muapi,
     ofox,
+    openrouter_video,
     task_artifacts,
     useapi,
     video,
@@ -2556,6 +2557,17 @@ def download_videos(
             max_clip_duration=max_clip_duration,
             material_directory=material_directory,
         )
+    if source == "openrouter":
+        # Same pay-per-clip rules as OFox: one paid job per clip, stopping as
+        # soon as the voiceover is covered, and no search cache for results.
+        return _download_videos_openrouter_on_demand(
+            task_id=task_id,
+            search_terms=search_terms,
+            video_aspect=video_aspect,
+            audio_duration=audio_duration,
+            max_clip_duration=max_clip_duration,
+            material_directory=material_directory,
+        )
     if source == "muapi":
         # MuAPI 的模型端点会创建异步付费任务。逐段提交并在覆盖配音时长后
         # 停止，避免把未使用的脚本关键词也发送到远端。
@@ -3074,6 +3086,114 @@ def _download_videos_ofox_on_demand(
     _persist_material_sources(task_id, material_sources)
     return video_paths
 
+
+
+def _download_videos_openrouter_on_demand(
+    *,
+    task_id: str,
+    search_terms: List[str],
+    video_aspect: VideoAspect,
+    audio_duration: float,
+    max_clip_duration: int,
+    material_directory: str,
+) -> List[str]:
+    """Generate OpenRouter clips one by one and stop paying once the voiceover is covered."""
+    video_paths: List[str] = []
+    material_sources: list[dict[str, Any]] = []
+
+    # 付费生成循环必须先验证控制循环次数的两个时长。NaN/Infinity 会让
+    # ``total_duration >= audio_duration`` 永远不成立，而非正片段时长会让
+    # 累计值无法增长，两者都可能为全部关键词创建无用的付费任务。
+    try:
+        required_duration = float(audio_duration)
+    except (TypeError, ValueError) as exc:
+        raise openrouter_video.OpenRouterVideoError("OpenRouter audio duration must be a finite number") from exc
+    if not math.isfinite(required_duration):
+        raise openrouter_video.OpenRouterVideoError("OpenRouter audio duration must be a finite number")
+    if required_duration <= 0:
+        logger.warning(
+            "skip OpenRouter paid generation because required audio duration is "
+            f"not positive: duration={required_duration}"
+        )
+        _persist_material_sources(task_id, material_sources)
+        return video_paths
+
+    try:
+        clip_duration = int(max_clip_duration)
+    except (TypeError, ValueError, OverflowError) as exc:
+        raise openrouter_video.OpenRouterVideoError("OpenRouter clip duration must be a positive integer") from exc
+    if clip_duration <= 0:
+        raise openrouter_video.OpenRouterVideoError("OpenRouter clip duration must be a positive integer")
+
+    total_duration = 0.0
+    for search_term in search_terms:
+        try:
+            video_items = openrouter_video.generate_videos(
+                search_term=search_term,
+                minimum_duration=clip_duration,
+                video_aspect=video_aspect,
+            )
+        except openrouter_video.OpenRouterVideoUnconfirmedTaskError as exc:
+            # 远端付费任务仍可能成功。立即停止继续下单，并保留任务 ID，方便
+            # 用户随后在 OpenRouter 控制台确认或找回结果。
+            logger.error(
+                "stop submitting new OpenRouter tasks because the last paid task "
+                f"is unconfirmed: task_id={exc.task_id or 'unknown'}, detail={exc}"
+            )
+            _persist_material_sources(task_id, material_sources)
+            raise
+        except openrouter_video.OpenRouterVideoError as exc:
+            logger.error(f"OpenRouter generation failed before completion: {exc}")
+            _persist_material_sources(task_id, material_sources)
+            raise
+
+        # 单个关键词被远端明确判失败（如触发内容审核）时返回空列表：任务已
+        # 结束、无计费悬念，跳过该片段继续生成后续关键词。
+        for item in video_items:
+            saved_video_path = _save_generated_video_with_retry(
+                item.url,
+                material_directory,
+                "openrouter",
+                request_headers=openrouter_video.download_headers(item.url),
+            )
+            if not saved_video_path:
+                # 远端任务已完成并产生费用，本地下载失败时必须把远端任务 ID
+                # 带回任务状态，便于用户去 OpenRouter 控制台找回结果。这里直接抛出
+                # 专用错误，同时阻止后续关键词继续创建新的付费任务。
+                source_info = (
+                    item.source_info if isinstance(item.source_info, dict) else {}
+                )
+                remote_task_id = str(source_info.get("asset_id") or "").strip()
+                _persist_material_sources(task_id, material_sources)
+                raise openrouter_video.OpenRouterVideoDownloadError(
+                    "OpenRouter generated a paid video but the result could not be "
+                    f"downloaded: id={remote_task_id or 'unknown'}",
+                    task_id=remote_task_id,
+                )
+            logger.info(f"video saved: {saved_video_path}")
+            video_paths.append(saved_video_path)
+            try:
+                material_sources.append(_material_source_record(item, saved_video_path))
+            except Exception as source_error:
+                logger.warning(
+                    "failed to prepare generated material source record: "
+                    f"provider=openrouter, "
+                    f"error={type(source_error).__name__}, detail={source_error}"
+                )
+            total_duration += min(clip_duration, item.duration)
+            if total_duration >= required_duration:
+                break
+        if total_duration >= required_duration:
+            logger.info(
+                "generated OpenRouter materials cover the required duration; stop "
+                f"submitting paid tasks: generated={total_duration:.1f}s, "
+                f"required={required_duration:.1f}s"
+            )
+            break
+
+    logger.success(f"generated and downloaded {len(video_paths)} OpenRouter videos")
+    _persist_material_sources(task_id, material_sources)
+    return video_paths
 
 def _download_videos_muapi_on_demand(
     *,

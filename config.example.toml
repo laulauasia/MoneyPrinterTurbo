@@ -593,6 +593,12 @@ openrouter_api_key = ""
 openrouter_base_url = ""
 openrouter_model_name = ""
 
+# Client billing. OpenRouter reports what each request cost (USD); the task's
+# script.json then gets an "llm_usage" block with that cost and the client price
+# derived from these two settings.
+billing_markup_percent = 0
+billing_minimum_charge_usd = 0
+
 # API Route, an OpenAI-compatible multi-model routing platform.
 # API key: https://www.api-route.com
 # Model list: https://www.api-route.com/pricing

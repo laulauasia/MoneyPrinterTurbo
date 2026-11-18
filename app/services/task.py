@@ -25,6 +25,7 @@ from app.services import (
     infistar_video,
     jalapeno_video,
     llm,
+    llm_usage,
     loomloom,
     material,
     metaso_minimax,
@@ -435,6 +436,14 @@ def save_script_data(task_id, video_script, video_terms, params):
         "search_terms": video_terms,
         "params": params,
     }
+    usage = llm_usage.summarize()
+    if usage:
+        script_data["llm_usage"] = usage
+        logger.info(
+            f"llm usage: requests={usage['requests']}, "
+            f"tokens={usage['prompt_tokens']}+{usage['completion_tokens']}, "
+            f"cost_usd={usage['cost_usd']}, client_price_usd={usage['client_price_usd']}"
+        )
     task_artifacts.write_script_data(task_id, script_data)
 
 
@@ -1576,6 +1585,7 @@ def _run_pipeline(
     codex_image_context: codex_image.CodexImageContext | None = None,
 ):
     logger.info(f"start task: {task_id}, stop_at: {stop_at}")
+    llm_usage.begin()
     sm.state.update_task(
         task_id, state=const.TASK_STATE_PROCESSING, progress=5,
         failed_stage=None, error=None, error_key=None, error_params=None,

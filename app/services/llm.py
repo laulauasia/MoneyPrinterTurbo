@@ -16,6 +16,7 @@ from openai.types.chat import ChatCompletion
 
 from app.config import config
 from app.models.llm_provider import DEFAULT_LLM_PROVIDER_ID, get_llm_provider
+from app.services import llm_usage
 from app.utils import utils
 from app.utils.request_logging import trace_sdk_call
 
@@ -239,6 +240,7 @@ def _extract_chat_completion_text(response, llm_provider: str) -> str:
         raise ValueError(f"[{llm_provider}] returned empty message")
 
     content = getattr(message, "content", None)
+    llm_usage.record(llm_provider, response)
     return _normalize_text_response(content, llm_provider)
 
 

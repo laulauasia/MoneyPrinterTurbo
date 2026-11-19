@@ -49,6 +49,7 @@ from app.services import bgm as bgm_service
 from app.services import material_upload as material_upload_service
 from app.services import (
     cache_manager,
+    claude_animation,
     llm,
     loomloom,
     material,
@@ -148,6 +149,7 @@ VIDEO_SOURCE_GROUPS = {
         "muapi",
         "useapi",
         "openrouter",
+        "claude_animation",
     ),
     "ai_image": ("openai_image", "codex_image", "useapi_image"),
     "local": ("local",),
@@ -3445,6 +3447,7 @@ def _material_provider_labels():
         "metaso_minimax": tr("Metaso MiniMax H3"),
         "ofox": tr("OFox AI Video"),
         "openrouter": tr("OpenRouter AI Video"),
+        "claude_animation": tr("Claude Code Animation"),
         "loomloom": tr("Shengsuan Cloud AI Video"),
         "volcengine_seedance": tr("Volcano Engine Seedance"),
         "infistar": tr("Infistar AI Video"),
@@ -3789,6 +3792,67 @@ def _render_material_provider_settings(provider):
         )
         _set_runtime_config(
             "app", "openrouter_video_model", openrouter_video_model.strip()
+        )
+    elif provider == "claude_animation":
+        st.markdown("**Claude Code + HyperFrames**")
+        st.caption(tr("Claude Code Animation Help"))
+        missing_animation_tools = claude_animation.missing_requirements(app_settings)
+        if missing_animation_tools:
+            st.warning(
+                tr("Claude Code Animation Unavailable").format(
+                    missing=", ".join(missing_animation_tools)
+                )
+            )
+        claude_animation_model = st.text_input(
+            tr("Claude Code Animation Model"),
+            value=str(app_settings.get("claude_animation_model", "") or ""),
+            key="claude_animation_model_input",
+            help=tr("Claude Code Animation Model Help"),
+            on_change=_save_settings_change,
+            args=(
+                "app",
+                "claude_animation_model",
+                "claude_animation_model_input",
+                lambda value: value.strip(),
+            ),
+        )
+        _set_runtime_config(
+            "app", "claude_animation_model", claude_animation_model.strip()
+        )
+        claude_animation_style = st.text_area(
+            tr("Claude Code Animation Style"),
+            value=str(app_settings.get("claude_animation_style", "") or ""),
+            key="claude_animation_style_input",
+            help=tr("Claude Code Animation Style Help"),
+            on_change=_save_settings_change,
+            args=(
+                "app",
+                "claude_animation_style",
+                "claude_animation_style_input",
+                lambda value: value.strip(),
+            ),
+        )
+        _set_runtime_config(
+            "app", "claude_animation_style", claude_animation_style.strip()
+        )
+        claude_animation_quality = st.selectbox(
+            tr("Claude Code Animation Quality"),
+            options=list(claude_animation.QUALITIES),
+            index=claude_animation.QUALITIES.index(
+                claude_animation.quality(app_settings)
+            ),
+            key="claude_animation_quality_input",
+            help=tr("Claude Code Animation Quality Help"),
+            on_change=_save_settings_change,
+            args=(
+                "app",
+                "claude_animation_quality",
+                "claude_animation_quality_input",
+                lambda value: value,
+            ),
+        )
+        _set_runtime_config(
+            "app", "claude_animation_quality", claude_animation_quality
         )
     elif provider == "ofox":
         st.markdown("**OfoxAI**")
@@ -6167,6 +6231,7 @@ def _render_video_settings(panel, params):
                 "jalapeno": tr("Jalapeno Cloud AI Video"),
                 "ofox": tr("OFox AI Video"),
                 "openrouter": tr("OpenRouter AI Video"),
+                "claude_animation": tr("Claude Code Animation"),
                 "metaso_minimax": tr("Metaso MiniMax H3"),
                 "muapi": tr("MuAPI AI Video"),
                 "useapi": tr("useapi.net AI Video"),
@@ -6548,6 +6613,8 @@ def _render_video_settings(panel, params):
                 _render_ofox_video_settings(params)
             if params.video_source == "openrouter":
                 _render_openrouter_video_settings(params)
+            if params.video_source == "claude_animation":
+                st.info(tr("Claude Code Animation Notice"))
             if params.video_source == "metaso_minimax":
                 _render_metaso_minimax_video_settings(params)
             if params.video_source == "muapi":
@@ -9356,6 +9423,7 @@ def _render_generation_controls(
             "volcengine_seedance",
             "ofox",
             "openrouter",
+            "claude_animation",
             "metaso_minimax",
             "muapi",
             "useapi",
@@ -9445,6 +9513,19 @@ def _render_generation_controls(
                 _remove_active_generation_task(task_id)
                 st.error(str(exc))
                 st.stop()
+
+        if params.video_source == "claude_animation" and (
+            missing_animation_tools := claude_animation.missing_requirements(
+                config.snapshot_config_with_pending(config.app)
+            )
+        ):
+            _remove_active_generation_task(task_id)
+            st.error(
+                tr("Claude Code Animation Unavailable").format(
+                    missing=", ".join(missing_animation_tools)
+                )
+            )
+            st.stop()
 
         if params.video_source == "openrouter" and not (
             openrouter_video.is_enabled(

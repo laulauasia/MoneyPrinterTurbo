@@ -305,7 +305,7 @@ def test_ai_video_settings_prioritize_sponsors_and_own_shengsuan_key():
             "Metaso MiniMax H3", "OFox AI Video", "Shengsuan Cloud AI Video",
             "Volcano Engine Seedance", "Infistar AI Video", "Jalapeno Cloud AI Video",
             "WaveSpeed AI Video", "MuAPI AI Video", "useapi.net AI Video",
-            "OpenRouter AI Video",
+            "OpenRouter AI Video", "Claude Code Animation",
         )]
         assert providers.value == "loomloom"
 

@@ -35,6 +35,7 @@ SUPPORTED_SOURCES = {
     "volcengine_seedance",
     "ofox",
     "openrouter",
+    "claude_animation",
     "metaso_minimax",
     "muapi",
     "useapi",

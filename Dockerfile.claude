@@ -8,17 +8,29 @@ FROM ghcr.io/harry0703/moneyprinterturbo:latest
 # CLI 版本固定，避免镜像重建时行为漂移；升级时改这里的版本号即可。
 ARG CLAUDE_CODE_VERSION=2.1.260
 ARG NODE_MAJOR=22
+# HyperFrames renders the scenes written by the "claude_animation" video source.
+# Keep this in step with HYPERFRAMES_VERSION in app/services/claude_animation.py.
+ARG HYPERFRAMES_VERSION=0.9.13
 
 # claude CLI 通过 npm 分发，发布镜像里没有 Node.js，需要先装 NodeSource 源。
 RUN set -eu; \
     apt-get update; \
     apt-get install -y --no-install-recommends ca-certificates curl gnupg; \
     curl -fsSL "https://deb.nodesource.com/setup_${NODE_MAJOR}.x" | bash -; \
-    apt-get install -y --no-install-recommends nodejs; \
-    npm install -g "@anthropic-ai/claude-code@${CLAUDE_CODE_VERSION}"; \
+    # HyperFrames ships no Chrome build for Linux arm64, so the renderer uses
+    # Debian's chromium on every architecture; unzip is its archive extractor.
+    apt-get install -y --no-install-recommends nodejs chromium unzip; \
+    npm install -g "@anthropic-ai/claude-code@${CLAUDE_CODE_VERSION}" \
+        "hyperframes@${HYPERFRAMES_VERSION}"; \
     npm cache clean --force; \
     apt-get purge -y gnupg; \
     apt-get autoremove -y; \
     apt-get clean; \
     rm -rf /var/lib/apt/lists/*; \
-    claude --version
+    claude --version; \
+    hyperframes --version; \
+    chromium --version
+
+ENV HYPERFRAMES_BROWSER_PATH=/usr/bin/chromium \
+    HYPERFRAMES_NO_TELEMETRY=1 \
+    HYPERFRAMES_SKIP_SKILLS=1

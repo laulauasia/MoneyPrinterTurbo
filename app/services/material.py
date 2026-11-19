@@ -24,6 +24,7 @@ from PIL import Image, UnidentifiedImageError
 from app.config import config
 from app.models.schema import ImageMotion, MaterialInfo, VideoAspect, VideoConcatMode
 from app.services import (
+    claude_animation,
     codex_image,
     generation_progress,
     infistar_video,
@@ -2474,6 +2475,7 @@ def download_videos(
     image_motion: ImageMotion = ImageMotion.zoom,
     jalapeno_video_endpoint: volcengine_seedance.SeedanceEndpoint | None = None,
     codex_image_context=None,
+    animation_context: dict[str, str] | None = None,
 ) -> List[str]:
     """
     搜索并下载覆盖配音时长所需的素材，返回本地文件路径。
@@ -2514,6 +2516,18 @@ def download_videos(
     elif material_directory and not os.path.isdir(material_directory):
         material_directory = ""
 
+    if source == claude_animation.PROVIDER_ID:
+        # Clips are authored by the local claude CLI and rendered on this
+        # machine: nothing to download or cache, and no per-clip charge.
+        return _generate_videos_claude_animation(
+            task_id=task_id,
+            search_terms=search_terms,
+            video_aspect=video_aspect,
+            audio_duration=audio_duration,
+            max_clip_duration=max_clip_duration,
+            animation_context=animation_context,
+            progress_callback=progress_callback,
+        )
     if source == "infistar":
         return _download_videos_infistar_on_demand(
             task_id=task_id, search_terms=search_terms, video_aspect=video_aspect,
@@ -3700,6 +3714,74 @@ if __name__ == "__main__":
     download_videos(
         "test123", ["Money Exchange Medium"], audio_duration=100, source="pixabay"
     )
+
+
+def _generate_videos_claude_animation(
+    *,
+    task_id: str,
+    search_terms: List[str],
+    video_aspect: VideoAspect,
+    audio_duration: float,
+    max_clip_duration: int,
+    animation_context: dict[str, str] | None = None,
+    progress_callback: Callable[[float], None] | None = None,
+) -> List[str]:
+    """Render one animated clip per scene until the voiceover is covered."""
+    try:
+        required = float(audio_duration)
+        clip_duration = int(max_clip_duration)
+    except (ValueError, TypeError, OverflowError) as exc:
+        raise claude_animation.ClaudeAnimationError(
+            "Claude animation duration must be finite and positive"
+        ) from exc
+    if not math.isfinite(required) or clip_duration <= 0:
+        raise claude_animation.ClaudeAnimationError(
+            "Claude animation duration must be finite and positive"
+        )
+    terms = [term.strip() for term in search_terms if isinstance(term, str) and term.strip()]
+    context = animation_context or {}
+    paths: List[str] = []
+    sources: list[dict[str, Any]] = []
+    if required <= 0 or not terms:
+        _persist_material_sources(task_id, sources)
+        return paths
+
+    clips_needed = math.ceil(required / clip_duration)
+    # A script usually has fewer keywords than the voiceover needs clips, so the
+    # keywords are reused in order. Skipped scenes get a bounded number of extra
+    # tries; without the cap a prompt that never renders would loop forever.
+    scene_budget = clips_needed + max(len(terms), 2)
+    try:
+        for index in range(scene_budget):
+            if len(paths) >= clips_needed:
+                break
+            term = terms[index % len(terms)]
+            item = claude_animation.generate_video(
+                search_term=term,
+                duration=clip_duration,
+                video_aspect=video_aspect,
+                output_dir=utils.task_dir(task_id),
+                subject=str(context.get("subject") or ""),
+                script=str(context.get("script") or ""),
+                variation=index // len(terms),
+            )
+            if item is None:
+                continue
+            paths.append(item.url)
+            sources.append(_material_source_record(item, item.url))
+            logger.info(
+                f"claude animation clip rendered: {len(paths)}/{clips_needed}, term={term!r}"
+            )
+            if progress_callback is not None:
+                progress_callback(min(len(paths) / clips_needed, 1.0))
+    finally:
+        _persist_material_sources(task_id, sources)
+    if not paths:
+        raise claude_animation.ClaudeAnimationError(
+            "Claude animation produced no clips; see the log for each scene's failure"
+        )
+    logger.success(f"rendered {len(paths)} Claude animation clips")
+    return paths
 
 
 def _download_videos_infistar_on_demand(

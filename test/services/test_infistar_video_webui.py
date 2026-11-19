@@ -65,7 +65,7 @@ def test_infistar_video_models_specs_and_billing_confirmation(language):
             "Metaso MiniMax H3", "OFox AI Video", "Shengsuan Cloud AI Video",
             "Volcano Engine Seedance", "Infistar AI Video", "Jalapeno Cloud AI Video",
             "WaveSpeed AI Video", "MuAPI AI Video", "useapi.net AI Video",
-            "OpenRouter AI Video",
+            "OpenRouter AI Video", "Claude Code Animation",
         )]
         assert providers.value == "infistar"
         assert not any(item.key in {

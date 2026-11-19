@@ -3,7 +3,8 @@
 # 与 docker-compose.release.yml 的区别：
 #   1. 构建 Dockerfile.claude，容器内包含 claude CLI；
 #   2. 挂载整个项目目录，使 claude_code Provider 的代码生效；
-#   3. 注入 CLAUDE_CODE_OAUTH_TOKEN，容器内没有 keychain，CLI 只能用
+#   3. 镜像内含 HyperFrames 与 chromium，供 claude_animation 视频来源渲染动画；
+#   4. 注入 CLAUDE_CODE_OAUTH_TOKEN，容器内没有 keychain，CLI 只能用
 #      `claude setup-token` 生成的长期令牌完成鉴权。
 #
 # 启动前先导出令牌：
@@ -30,6 +31,9 @@ services:
     command: [ "streamlit", "run", "./webui/Main.py", "--server.address=0.0.0.0", "--server.port=8501", "--browser.serverAddress=127.0.0.1", "--server.enableCORS=True", "--browser.gatherUsageStats=False", "--client.toolbarMode=minimal", "--logger.hideWelcomeMessage=True", "--server.showEmailPrompt=False" ]
     volumes: *common-volumes
     environment: *common-environment
+    # Chrome renders the Claude animation clips and needs more than Docker's
+    # default 64 MB of shared memory.
+    shm_size: "1gb"
     restart: always
   api:
     build: *common-build
@@ -39,4 +43,7 @@ services:
     command: [ "python3", "main.py" ]
     volumes: *common-volumes
     environment: *common-environment
+    # Chrome renders the Claude animation clips and needs more than Docker's
+    # default 64 MB of shared memory.
+    shm_size: "1gb"
     restart: always

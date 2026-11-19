@@ -18,6 +18,7 @@ from app.models import const
 from app.models.schema import VideoConcatMode, VideoParams
 from app.services import bgm as bgm_service
 from app.services import (
+    claude_animation,
     codex_image,
     codex_oauth,
     elevenlabs_music,
@@ -106,7 +107,7 @@ _SUPPORTED_VIDEO_SOURCES = frozenset({
     "pexels", "pixabay", "coverr", "local", "wavespeed",
     "volcengine_seedance", "ofox", "metaso_minimax", "muapi", "useapi",
     "loomloom", "openai_image", "codex_image", "useapi_image", "infistar",
-    "jalapeno", "openrouter",
+    "jalapeno", "openrouter", "claude_animation",
 })
 
 
@@ -746,6 +747,7 @@ def get_video_materials(
     loomloom_video_request: loomloom.LoomLoomConfirmedVideoRequest | None = None,
     jalapeno_video_endpoint: volcengine_seedance.SeedanceEndpoint | None = None,
     codex_image_context: codex_image.CodexImageContext | None = None,
+    animation_script: str = "",
 ):
     if params.video_source == "local":
         logger.info("\n\n## preprocess local materials")
@@ -833,6 +835,13 @@ def get_video_materials(
         )
         if params.video_source == "codex_image":
             generation_options["codex_image_context"] = codex_image_context
+        if params.video_source == claude_animation.PROVIDER_ID:
+            # Stock sources only need keywords; an animator also needs to know
+            # what the video is about.
+            generation_options["animation_context"] = {
+                "subject": str(params.video_subject or ""),
+                "script": str(animation_script or params.video_script or ""),
+            }
         # 顺序匹配模式只在用户显式开启时生效。这里强制素材下载按关键词顺序
         # 轮询，避免某个早期关键词下载太多素材，把后续脚本主题挤出最终时间线。
         try:
@@ -908,6 +917,9 @@ def get_video_materials(
                 str(exc),
                 details=details,
             )
+            return None
+        except claude_animation.ClaudeAnimationError as exc:
+            _mark_task_failed(task_id, "materials", str(exc))
             return None
         except openrouter_video.OpenRouterVideoError as exc:
             # An unconfirmed or undownloaded paid job keeps its id in the task
@@ -1683,6 +1695,17 @@ def _run_pipeline(
 
     if (
         stop_at in {"materials", "video"}
+        and params.video_source == claude_animation.PROVIDER_ID
+        and (missing_tools := claude_animation.missing_requirements())
+    ):
+        return _mark_task_failed(
+            task_id,
+            "preflight",
+            "Claude Code animation requires: " + ", ".join(missing_tools),
+        )
+
+    if (
+        stop_at in {"materials", "video"}
         and params.video_source == "metaso_minimax"
         and not metaso_minimax.is_enabled()
     ):
@@ -1930,6 +1953,8 @@ def _run_pipeline(
            if codex_image_context is not None else {}),
         **({"jalapeno_video_endpoint": jalapeno_video_endpoint}
            if jalapeno_video_endpoint is not None else {}),
+        **({"animation_script": video_script}
+           if params.video_source == claude_animation.PROVIDER_ID else {}),
     )
     # Paid clips are billed even when a later clip fails, so the usage block
     # is refreshed before the outcome of the stage is checked.

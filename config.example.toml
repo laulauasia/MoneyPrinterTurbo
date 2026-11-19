@@ -162,6 +162,28 @@ openrouter_video_resolution = "720p"
 openrouter_video_poll_interval = 10
 openrouter_video_run_timeout = 1800
 
+# Claude Code animation: the logged-in local `claude` CLI writes one animated
+# scene per clip and HyperFrames (https://hyperframes.heygen.com) renders it to
+# MP4. No per-clip charge; calls count against your Claude subscription limits.
+# Requirements in whatever runs MoneyPrinterTurbo:
+#   - the `claude` CLI, logged in (Docker: CLAUDE_CODE_OAUTH_TOKEN, see
+#     docker-compose.claude.yml)
+#   - Node.js 22+ and FFmpeg; HyperFrames is fetched with npx unless
+#     claude_animation_hyperframes_path points at an installed binary
+# Leave cli_path empty to reuse claude_code_cli_path, then `claude` from PATH.
+claude_animation_model = ""
+claude_animation_cli_path = ""
+claude_animation_hyperframes_path = ""
+# Optional art direction applied to every scene, e.g. "flat vector, navy and
+# amber, bold sans-serif".
+claude_animation_style = ""
+# draft (fastest), looks or delivery.
+claude_animation_quality = "draft"
+# Attempts per scene, including the first one (1-4).
+claude_animation_max_attempts = 2
+claude_animation_timeout = 300
+claude_animation_render_timeout = 600
+
 # OFox (https://ofox.ai) exposes multiple text-to-video models (Seedance, Wan,
 # and more) behind one API key using an asynchronous /v1/videos API.
 # Create an API key at https://ofox.ai

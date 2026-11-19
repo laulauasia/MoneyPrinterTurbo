@@ -10,6 +10,7 @@ import shutil
 from app.config import config
 from app.models.llm_provider import LLM_PROVIDER_REGISTRY
 from app.services import (
+    claude_animation,
     infistar_video,
     jalapeno_video,
     loomloom,
@@ -100,6 +101,7 @@ def configured_material_providers(settings, groups, codex_connected=False):
             "metaso_minimax": metaso_minimax.is_enabled(settings),
             "ofox": ofox.is_enabled(settings),
             "openrouter": openrouter_video.is_enabled(settings),
+            "claude_animation": claude_animation.is_enabled(settings),
             "volcengine_seedance": volcengine_seedance.is_enabled(settings),
             "infistar": infistar_video.is_enabled(settings),
             "jalapeno": jalapeno_video.is_enabled(settings),

@@ -45,6 +45,7 @@ _CLI_VIDEO_SOURCES = (
     "volcengine_seedance",
     "ofox",
     "openrouter",
+    "claude_animation",
     "infistar",
     "jalapeno",
     "metaso_minimax",

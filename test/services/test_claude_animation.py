@@ -424,6 +424,31 @@ class TestClaudeAnimationPlanning(unittest.TestCase):
         self.assertEqual([scene.narration for scene in plan.scenes],
                          ["Start early.", "Gains earn gains."])
 
+    def test_footage_is_offered_to_the_planner_only_with_a_footage_source(self):
+        reply = json.dumps({"look": "x", "scenes": [
+            {"idea": "seed", "footage": ""},
+            {"idea": "skyline", "footage": "  city   skyline night "},
+        ]})
+
+        tools = _FakeTools([_claude_reply(reply)])
+        plain = self._plan(tools)
+        self.assertNotIn('"footage"', tools.prompts[0])
+        self.assertEqual([scene.footage for scene in plain.scenes], ["", ""])
+
+        self.settings["claude_animation_footage_source"] = "Pexels"
+        tools = _FakeTools([_claude_reply(reply)])
+        mixed = self._plan(tools)
+        self.assertIn('"footage": "stock video search', tools.prompts[0])
+        self.assertIn("at\n  most half of the scenes", tools.prompts[0])
+        self.assertEqual([scene.footage for scene in mixed.scenes], ["", "city skyline night"])
+
+    def test_settings_for_parallel_scenes_and_footage_are_bounded(self):
+        self.assertEqual(claude_animation.concurrency(), 2)
+        self.assertEqual(claude_animation.footage_source(), "")
+        self.settings.update(claude_animation_concurrency=40, claude_animation_footage_source="youtube")
+        self.assertEqual(claude_animation.concurrency(), 6)
+        self.assertEqual(claude_animation.footage_source(), "")
+
     def test_extra_planned_scenes_are_dropped(self):
         plan = self._plan(_FakeTools([_claude_reply(PLAN_REPLY)]), scene_count=1)
 
@@ -478,12 +503,24 @@ class TestClaudeAnimationPlanning(unittest.TestCase):
 
 
 class TestClaudeAnimationMaterials(unittest.TestCase):
-    def _run(self, results, plan=None, **overrides):
+    def _run(self, results, plan=None, concurrency=1, footage="", stock=None, generate=None, **overrides):
         calls = []
+        self.stock_calls = []
+        self.hold_calls = []
 
         def fake_generate(**kwargs):
             calls.append(kwargs)
+            if generate is not None:
+                return generate(**kwargs)
             return results.pop(0) if results else None
+
+        def fake_stock(**kwargs):
+            self.stock_calls.append(kwargs)
+            return stock(**kwargs) if stock else None
+
+        def fake_hold(path, seconds, *, at_start):
+            self.hold_calls.append((path, seconds, at_start))
+            return True
 
         options = {
             "task_id": "task",
@@ -496,9 +533,14 @@ class TestClaudeAnimationMaterials(unittest.TestCase):
         with (
             patch.object(material.claude_animation, "generate_video", side_effect=fake_generate),
             patch.object(material.claude_animation, "plan_scenes", return_value=plan) as plan_scenes,
+            patch.object(material.claude_animation, "concurrency", return_value=concurrency),
+            patch.object(material.claude_animation, "footage_source", return_value=footage),
+            patch.object(material, "_stock_clip_for_scene", side_effect=fake_stock),
+            patch.object(material, "_hold_frame", side_effect=fake_hold),
             patch.object(material, "_persist_material_sources") as persist,
             patch.object(material.utils, "task_dir", return_value="/tmp/task"),
         ):
+            self.persist = persist
             paths = material._generate_videos_claude_animation(**options)
         self.plan_call = plan_scenes.call_args
         return paths, calls, persist
@@ -569,7 +611,7 @@ class TestClaudeAnimationMaterials(unittest.TestCase):
         self.assertEqual(self.plan_call.kwargs["scene_count"], 2)
         self.assertEqual(len(self.plan_call.kwargs["timings"]), 2)
 
-    def test_a_skipped_timed_scene_gives_its_time_to_the_next_one(self):
+    def test_a_skipped_first_scene_is_covered_by_the_next_scenes_first_frame(self):
         # Scene 1 fails as planned and again with each fallback keyword.
         with self._timed((4.2, "one"), (6.3, "two"), (3.0, "three")):
             paths, calls, _ = self._run(
@@ -578,9 +620,112 @@ class TestClaudeAnimationMaterials(unittest.TestCase):
                 animation_context={"script": "Words", "subtitle_path": "/tmp/task/subtitle.srt"},
             )
 
-        self.assertEqual(len(paths), 2)
-        self.assertEqual([call["duration"] for call in calls], [4.2, 4.2, 4.2, 10.5, 3.0])
+        self.assertEqual(paths, ["/tmp/task/2.mp4", "/tmp/task/3.mp4"])
+        self.assertEqual([call["duration"] for call in calls], [4.2, 4.2, 4.2, 6.3, 3.0])
         self.assertEqual(calls[1]["narration"], "one")
+        self.assertEqual(self.hold_calls, [("/tmp/task/2.mp4", 4.2, True)])
+
+    def test_a_skipped_later_scene_is_covered_by_the_last_frame_before_it(self):
+        with self._timed((4.2, "one"), (6.3, "two"), (3.0, "three")):
+            paths, _, _ = self._run(
+                [self._item("1"), None, None, None, self._item("3")],
+                plan=self._plan("seed", "coins", "tree"),
+                animation_context={"script": "Words", "subtitle_path": "/tmp/task/subtitle.srt"},
+            )
+
+        self.assertEqual(paths, ["/tmp/task/1.mp4", "/tmp/task/3.mp4"])
+        self.assertEqual(self.hold_calls, [("/tmp/task/1.mp4", 6.3, False)])
+
+    def test_scenes_made_at_the_same_time_come_back_in_narration_order(self):
+        import threading
+        import time
+
+        running = []
+        most_at_once = []
+        lock = threading.Lock()
+
+        def generate(**kwargs):
+            with lock:
+                running.append(kwargs["search_term"])
+                most_at_once.append(len(running))
+            # The first scene finishes last.
+            time.sleep(0.15 if kwargs["search_term"] == "seed" else 0.03)
+            with lock:
+                running.remove(kwargs["search_term"])
+            return self._item(kwargs["search_term"])
+
+        paths, calls, _ = self._run(
+            [], plan=self._plan("seed", "coins", "tree"), concurrency=3, generate=generate
+        )
+
+        self.assertEqual(paths, ["/tmp/task/seed.mp4", "/tmp/task/coins.mp4", "/tmp/task/tree.mp4"])
+        self.assertEqual(max(most_at_once), 3)
+        self.assertEqual(len(calls), 3)
+
+    def test_a_fatal_error_in_one_scene_stops_the_rest_and_keeps_what_was_made(self):
+        def generate(**kwargs):
+            if kwargs["search_term"] == "coins":
+                raise material.claude_animation.ClaudeAnimationUnavailableError("not logged in")
+            return self._item(kwargs["search_term"])
+
+        with self.assertRaises(material.claude_animation.ClaudeAnimationUnavailableError):
+            self._run([], plan=self._plan("seed", "coins", "tree"), generate=generate)
+
+        self.assertEqual(len(self.persist.call_args.args[1]), 1)
+
+    def _footage_plan(self):
+        scene = material.claude_animation.PlannedScene
+        return material.claude_animation.ScenePlan(
+            look="shared look",
+            scenes=(
+                scene(idea="seed", narration="one"),
+                scene(idea="skyline drawn in lines", narration="two", footage="city skyline night"),
+                scene(idea="tree", narration="three"),
+            ),
+        )
+
+    def test_a_footage_scene_uses_a_stock_clip_instead_of_an_animation(self):
+        paths, calls, _ = self._run(
+            [self._item("1"), self._item("3")],
+            plan=self._footage_plan(), footage="pexels",
+            stock=lambda **_: self._item("stock"),
+        )
+
+        self.assertEqual(paths, ["/tmp/task/1.mp4", "/tmp/task/stock.mp4", "/tmp/task/3.mp4"])
+        self.assertEqual([call["search_term"] for call in calls], ["seed", "tree"])
+        self.assertEqual(len(self.stock_calls), 1)
+        self.assertEqual(self.stock_calls[0]["query"], "city skyline night")
+        self.assertEqual(self.stock_calls[0]["source"], "pexels")
+        self.assertEqual(self.stock_calls[0]["duration"], 5)
+
+    def test_a_footage_scene_is_animated_when_no_stock_clip_is_found(self):
+        paths, calls, _ = self._run(
+            [self._item("1"), self._item("2"), self._item("3")],
+            plan=self._footage_plan(), footage="pexels",
+        )
+
+        self.assertEqual(len(paths), 3)
+        self.assertEqual([call["search_term"] for call in calls],
+                         ["seed", "skyline drawn in lines", "tree"])
+
+    def test_footage_marks_are_ignored_without_a_footage_source(self):
+        _, calls, _ = self._run(
+            [self._item("1"), self._item("2"), self._item("3")], plan=self._footage_plan()
+        )
+
+        self.assertEqual(self.stock_calls, [])
+        self.assertEqual(len(calls), 3)
+
+    def test_a_scene_that_cannot_be_animated_falls_back_to_footage(self):
+        paths, calls, _ = self._run(
+            [self._item("1"), None, None, None, self._item("3")],
+            plan=self._plan("seed", "coins", "tree"), footage="pixabay",
+            stock=lambda **_: self._item("stock"),
+        )
+
+        self.assertEqual(paths, ["/tmp/task/1.mp4", "/tmp/task/stock.mp4", "/tmp/task/3.mp4"])
+        self.assertEqual(len(calls), 5)
+        self.assertEqual(self.stock_calls[0]["query"], "a")
 
     def test_without_subtitle_timings_every_scene_has_the_clip_length(self):
         with self._timed() as read:
@@ -618,6 +763,72 @@ class TestClaudeAnimationMaterials(unittest.TestCase):
     def test_invalid_duration_is_refused_before_any_claude_call(self):
         with self.assertRaises(material.claude_animation.ClaudeAnimationError):
             self._run([self._item("1")], audio_duration=float("nan"))
+
+
+class TestStockClipForScene(unittest.TestCase):
+    def setUp(self):
+        self.folder = tempfile.mkdtemp()
+        self.used = set()
+        self.ffmpeg_calls = []
+
+    def _clip(self, items, ffmpeg_ok=True, **overrides):
+        import threading
+
+        def ffmpeg(arguments, timeout=300.0):
+            self.ffmpeg_calls.append(arguments)
+            if ffmpeg_ok:
+                with open(arguments[-1], "wb") as handle:
+                    handle.write(b"mp4")
+            return ffmpeg_ok
+
+        options = {
+            "source": "pexels", "query": "city skyline", "duration": 4.3,
+            "video_aspect": VideoAspect.portrait, "output_dir": self.folder,
+            "used_urls": self.used, "lock": threading.Lock(),
+        }
+        options.update(overrides)
+        with (
+            patch.object(material, "_search_videos_with_cache", return_value=items) as search,
+            patch.object(material, "save_video", side_effect=lambda video_url: f"/cache/{video_url[-1]}.mp4"),
+            patch.object(material, "_run_ffmpeg_quietly", side_effect=ffmpeg),
+        ):
+            item = material._stock_clip_for_scene(**options)
+        self.search = search
+        return item
+
+    @staticmethod
+    def _items():
+        return [
+            material.MaterialInfo(provider="pexels", url=f"https://v/{name}", duration=9,
+                                  source_info={"provider": "pexels", "page_url": f"https://p/{name}"})
+            for name in ("a", "b")
+        ]
+
+    def test_the_clip_is_cut_to_the_scene_length_into_its_own_file(self):
+        item = self._clip(self._items())
+
+        self.assertEqual(self.search.call_args.kwargs["minimum_duration"], 5)
+        self.assertEqual(self.search.call_args.kwargs["search_term"], "city skyline")
+        arguments = self.ffmpeg_calls[0]
+        self.assertEqual(arguments[arguments.index("-i") + 1], "/cache/a.mp4")
+        self.assertEqual(arguments[arguments.index("-t") + 1], "4.3")
+        self.assertTrue(item.url.startswith(self.folder))
+        self.assertEqual(item.provider, "pexels")
+        self.assertEqual(item.source_info["page_url"], "https://p/a")
+
+    def test_one_video_is_not_shown_in_two_scenes(self):
+        first = self._clip(self._items())
+        second = self._clip(self._items())
+        third = self._clip(self._items())
+
+        self.assertEqual(first.source_info["page_url"], "https://p/a")
+        self.assertEqual(second.source_info["page_url"], "https://p/b")
+        self.assertIsNone(third)
+
+    def test_no_clip_when_nothing_is_found_or_the_cut_fails(self):
+        self.assertIsNone(self._clip([]))
+        self.assertIsNone(self._clip(self._items(), ffmpeg_ok=False))
+        self.assertEqual(os.listdir(self.folder), [])
 
 
 class TestSceneTimings(unittest.TestCase):

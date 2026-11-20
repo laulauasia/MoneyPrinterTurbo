@@ -13,6 +13,11 @@ When the voiceover's subtitle timings are known, scenes are cut to them
 (``scene_timings``): each scene lasts as long as the lines spoken over it. Every
 scene is reviewed before it is accepted: ``hyperframes check`` looks at sampled
 frames in a browser, and the rendered clip is tested for an empty frame.
+
+Scenes are independent once the plan exists, so the caller writes several at
+once (``concurrency``). With a stock footage source configured
+(``footage_source``), the planner may mark a scene that shows something
+filmable; the caller then uses a stock clip there instead of an animation.
 """
 
 from __future__ import annotations
@@ -55,6 +60,10 @@ MAX_PLAN_SCENES = 60
 MAX_LOOK_LENGTH = 1200
 MAX_IDEA_LENGTH = 400
 MAX_NARRATION_LENGTH = 300
+MAX_FOOTAGE_QUERY_LENGTH = 80
+DEFAULT_CONCURRENCY = 2
+MAX_CONCURRENCY = 6
+FOOTAGE_SOURCES = ("pexels", "pixabay", "coverr")
 # A scene shorter than this has no time to read; it is merged into its neighbour.
 MIN_SCENE_SECONDS = 2.0
 # Scene lengths are multiples of this, which is a whole number of frames at FPS.
@@ -210,6 +219,19 @@ def review_enabled(settings: Mapping[str, Any] | None = None) -> bool:
     return _flag(_settings(settings), "claude_animation_review")
 
 
+def concurrency(settings: Mapping[str, Any] | None = None) -> int:
+    """How many scenes are written and rendered at the same time."""
+    return int(_bounded_float(
+        _settings(settings), "claude_animation_concurrency", DEFAULT_CONCURRENCY, 1, MAX_CONCURRENCY
+    ))
+
+
+def footage_source(settings: Mapping[str, Any] | None = None) -> str:
+    """The stock source for scenes better shown as footage, or ``""`` for animation only."""
+    source = _text(_settings(settings), "claude_animation_footage_source").lower()
+    return source if source in FOOTAGE_SOURCES else ""
+
+
 def style_preset(settings: Mapping[str, Any] | None = None) -> AnimationStyle | None:
     """The configured named style, or ``None`` when none is set or its file is gone."""
     return animation_styles.get_style(_text(_settings(settings), "claude_animation_style_preset"))
@@ -219,6 +241,9 @@ def style_preset(settings: Mapping[str, Any] | None = None) -> AnimationStyle | 
 class PlannedScene:
     idea: str
     narration: str = ""
+    # A stock search for a scene better shown as footage; ``idea`` still
+    # describes the animation used when no footage is found.
+    footage: str = ""
 
 
 @dataclass(frozen=True)
@@ -345,8 +370,10 @@ def build_plan_prompt(
     preset: AnimationStyle | None = None,
     style: str = "",
     timings: Sequence[TimedScene] = (),
+    footage: bool = False,
 ) -> str:
-    """``timings`` fixes each scene's narration and length; without it the planner splits the script."""
+    """``timings`` fixes each scene's narration and length; without it the planner
+    splits the script. ``footage`` lets the planner ask for stock footage."""
     lines = [
         f"Plan a {width}x{height} animated video of exactly {scene_count} scenes, "
         + ("" if timings else f"{_seconds(duration)} seconds each, ")
@@ -368,7 +395,7 @@ def build_plan_prompt(
             f"Decide what each of the {scene_count} scenes shows. A short scene needs a "
             "simple idea; a long one can build in steps."
         )
-        entry = '{"idea": "what is on screen and how it moves, in one or two sentences"}'
+        entry = '{"idea": "what is on screen and how it moves, in one or two sentences"'
     else:
         task = (
             f"Split the narration into {scene_count} consecutive parts of similar length, "
@@ -376,8 +403,19 @@ def build_plan_prompt(
         )
         entry = (
             '{"narration": "the part of the narration this scene plays under", '
-            '"idea": "what is on screen and how it moves, in one or two sentences"}'
+            '"idea": "what is on screen and how it moves, in one or two sentences"'
         )
+    footage_rule = ""
+    if footage:
+        entry += ', "footage": "stock video search of 2-4 words, or empty"'
+        footage_rule = """
+- A scene may be stock video instead of animation: give "footage" a search that
+  a stock library will match (a place, an object, people doing something), only
+  when the narration names something concrete and filmable. Numbers, abstract
+  ideas and processes stay animated, with "footage" empty. Use footage for at
+  most half of the scenes, never for the first one, and still give every scene
+  an animated "idea" in case no footage is found."""
+    entry += "}"
     lines.append(
         f"""
 {task} Scenes are drawn with HTML, CSS and inline
@@ -395,7 +433,7 @@ Rules:
 - Exactly {scene_count} scenes, in narration order.
 - Each idea is concrete and visual (a chart filling, a coin stack growing, a path
   being drawn), never a restatement of the narration.
-- Vary the composition from scene to scene; keep the look identical."""
+- Vary the composition from scene to scene; keep the look identical.{footage_rule}"""
     )
     return "\n".join(lines)
 
@@ -422,6 +460,7 @@ def parse_plan(reply: str, scene_count: int) -> ScenePlan:
             PlannedScene(
                 idea=idea[:MAX_IDEA_LENGTH],
                 narration=str(entry.get("narration") or "").strip()[:MAX_NARRATION_LENGTH],
+                footage=" ".join(str(entry.get("footage") or "").split())[:MAX_FOOTAGE_QUERY_LENGTH],
             )
             if idea
             else None
@@ -458,7 +497,7 @@ def plan_scenes(
         script=script, scene_count=scene_count, duration=duration,
         width=width, height=height, subject=subject,
         preset=style_preset(source), style=_text(source, "claude_animation_style"),
-        timings=timings,
+        timings=timings, footage=bool(footage_source(source)),
     )
     try:
         plan = parse_plan(_ask_claude(prompt, source, system_prompt=PLAN_SYSTEM_PROMPT), scene_count)
@@ -472,15 +511,25 @@ def plan_scenes(
         plan = ScenePlan(
             look=plan.look,
             scenes=tuple(
-                PlannedScene(idea=scene.idea, narration=timings[index].narration)
+                PlannedScene(idea=scene.idea, narration=timings[index].narration, footage=scene.footage)
                 if scene is not None and index < len(timings)
                 else scene
                 for index, scene in enumerate(plan.scenes)
             ),
         )
+    if not footage_source(source) and any(scene and scene.footage for scene in plan.scenes):
+        # Footage was not offered, so a search the planner added anyway is dropped.
+        plan = ScenePlan(
+            look=plan.look,
+            scenes=tuple(
+                PlannedScene(idea=scene.idea, narration=scene.narration) if scene else None
+                for scene in plan.scenes
+            ),
+        )
     logger.info(
         f"claude animation plan: {sum(scene is not None for scene in plan.scenes)}/{scene_count} "
-        f"scenes, look={plan.look!r}"
+        f"scenes, {sum(bool(scene and scene.footage) for scene in plan.scenes)} as footage, "
+        f"look={plan.look!r}"
     )
     return plan
 

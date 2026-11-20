@@ -195,6 +195,14 @@ claude_animation_follow_narration = true
 # nothing moves, and the rendered clip is tested for an empty frame. A rejected
 # scene goes back to Claude with the findings. Adds a few seconds per scene.
 claude_animation_review = true
+# Scenes written and rendered at the same time (1-6). Each one is a Claude
+# request plus a headless Chrome render, so match it to the machine's cores.
+claude_animation_concurrency = 2
+# Mix stock footage into the animation: "pexels", "pixabay" or "coverr" (needs
+# that source's API key above). The planner marks scenes that show something
+# concrete and filmable, and those use a stock clip; the rest stay animated.
+# A scene that cannot be animated also falls back to footage. Empty = animation only.
+claude_animation_footage_source = ""
 # draft (fastest), looks or delivery.
 claude_animation_quality = "draft"
 # Attempts per scene, including the first one (1-4).

@@ -1,10 +1,11 @@
 import base64
-from concurrent.futures import ThreadPoolExecutor
+from concurrent.futures import ThreadPoolExecutor, as_completed
 from contextvars import copy_context
 import io
 import math
 import os
 import random
+import subprocess
 import tempfile
 import threading
 import time
@@ -3716,6 +3717,111 @@ if __name__ == "__main__":
     )
 
 
+_STOCK_SEARCHES: dict[str, Callable[..., List[MaterialInfo]]] = {
+    "pexels": search_videos_pexels,
+    "pixabay": search_videos_pixabay,
+    "coverr": search_videos_coverr,
+}
+# Candidates tried for one footage scene before it is animated instead.
+_FOOTAGE_DOWNLOAD_ATTEMPTS = 3
+
+
+def _run_ffmpeg_quietly(arguments: list[str], timeout: float = 300.0) -> bool:
+    command = [video.get_ffmpeg_binary(), "-v", "error", "-y", *arguments]
+    try:
+        completed = subprocess.run(command, capture_output=True, text=True, timeout=timeout)
+    except (OSError, subprocess.TimeoutExpired) as exc:
+        logger.warning(f"ffmpeg could not run: {exc}")
+        return False
+    if completed.returncode != 0:
+        logger.warning(f"ffmpeg failed: {(completed.stderr or '').strip()[-300:]}")
+    return completed.returncode == 0
+
+
+def _stock_clip_for_scene(
+    *,
+    source: str,
+    query: str,
+    duration: float,
+    video_aspect: VideoAspect,
+    output_dir: str,
+    used_urls: set[str],
+    lock: threading.Lock,
+) -> MaterialInfo | None:
+    """A stock clip for one scene, cut to the scene's length; ``None`` if none fits.
+
+    The clip is cut into a file of its own: the download is a shared cache
+    entry, and the combine step plays a scene's clip at its full length.
+    """
+    try:
+        candidates = _search_videos_with_cache(
+            provider=source,
+            search_videos=_STOCK_SEARCHES[source],
+            search_term=query,
+            minimum_duration=math.ceil(duration),
+            video_aspect=video_aspect,
+        )
+    except Exception as exc:
+        logger.warning(
+            f"footage search failed, the scene is animated instead: source={source}, "
+            f"query={query!r}, error={type(exc).__name__}"
+        )
+        return None
+    attempts = 0
+    for item in candidates:
+        if attempts >= _FOOTAGE_DOWNLOAD_ATTEMPTS:
+            break
+        with lock:
+            # One video is shown once, even when two scenes search for the same thing.
+            if item.url in used_urls:
+                continue
+            used_urls.add(item.url)
+        attempts += 1
+        try:
+            downloaded = save_video(video_url=item.url)
+        except Exception as exc:
+            logger.warning(
+                "footage download failed: "
+                f"source={source}, detail={_redact_request_error(exc, item.url)}"
+            )
+            continue
+        if not downloaded:
+            continue
+        clip_path = os.path.join(output_dir, f"claude-animation-footage-{uuid.uuid4().hex[:12]}.mp4")
+        if _run_ffmpeg_quietly(
+            # Re-encoded, not stream-copied: a copy ends on a packet boundary
+            # and runs a few frames long, which adds up over several scenes.
+            ["-i", downloaded, "-t", f"{duration:g}", "-map", "0:v:0", "-an",
+             "-c:v", "libx264", "-preset", "veryfast", "-crf", "18", "-pix_fmt", "yuv420p", clip_path]
+        ) and os.path.getsize(clip_path) > 0:
+            return MaterialInfo(
+                provider=item.provider,
+                url=clip_path,
+                duration=math.ceil(duration),
+                source_info=item.source_info,
+            )
+        if os.path.isfile(clip_path):
+            os.remove(clip_path)
+    return None
+
+
+def _hold_frame(clip_path: str, seconds: float, *, at_start: bool) -> bool:
+    """Lengthen a clip by freezing its last (or first) frame for ``seconds``."""
+    side = "start" if at_start else "stop"
+    held_path = f"{clip_path}.hold.mp4"
+    done = _run_ffmpeg_quietly([
+        "-i", clip_path,
+        "-vf", f"tpad={side}_mode=clone:{side}_duration={seconds:g}",
+        "-an", "-c:v", "libx264", "-preset", "veryfast", "-crf", "18", "-pix_fmt", "yuv420p",
+        held_path,
+    ])
+    if done:
+        os.replace(held_path, clip_path)
+    elif os.path.isfile(held_path):
+        os.remove(held_path)
+    return done
+
+
 def _generate_videos_claude_animation(
     *,
     task_id: str,
@@ -3726,7 +3832,11 @@ def _generate_videos_claude_animation(
     animation_context: dict[str, str] | None = None,
     progress_callback: Callable[[float], None] | None = None,
 ) -> List[str]:
-    """Render one animated clip per scene until the voiceover is covered."""
+    """Make one clip per scene until the voiceover is covered.
+
+    Scenes are made several at a time and returned in narration order. A scene
+    the plan marks as footage is a stock clip when one is found.
+    """
     try:
         required = float(audio_duration)
         clip_duration = int(max_clip_duration)
@@ -3764,11 +3874,78 @@ def _generate_videos_claude_animation(
             f"claude animation scenes follow the narration: {len(timings)} scenes, "
             f"lengths={[scene.duration for scene in timings]}"
         )
-    # A script usually has fewer keywords than the voiceover needs clips, so the
-    # keywords are reused in order. Skipped scenes get a bounded number of extra
-    # tries; without the cap a prompt that never renders would loop forever.
-    retries_left = max(len(terms), 2)
-    keyword_index = 0
+    footage_source = claude_animation.footage_source()
+    output_dir = utils.task_dir(task_id)
+    # Scenes share these across threads. A script usually has fewer keywords
+    # than the voiceover needs clips, so the keywords are reused in order.
+    # Skipped scenes get a bounded number of extra tries between them; without
+    # the cap a prompt that never renders would loop forever.
+    lock = threading.Lock()
+    shared = {"retries_left": max(len(terms), 2), "keyword_index": 0}
+    used_footage: set[str] = set()
+    stop = threading.Event()
+    results: dict[int, tuple[MaterialInfo, str]] = {}
+
+    def next_keyword() -> tuple[str, int]:
+        with lock:
+            index = shared["keyword_index"]
+            shared["keyword_index"] += 1
+        return terms[index % len(terms)], index // len(terms)
+
+    def take_retry() -> bool:
+        with lock:
+            if shared["retries_left"] <= 0:
+                return False
+            shared["retries_left"] -= 1
+            return True
+
+    def stock_clip(query: str, duration: float) -> MaterialInfo | None:
+        return _stock_clip_for_scene(
+            source=footage_source, query=query, duration=duration,
+            video_aspect=video_aspect, output_dir=output_dir,
+            used_urls=used_footage, lock=lock,
+        )
+
+    def make_scene(slot: int, scene, look: str, planned: bool) -> tuple[MaterialInfo, str] | None:
+        timed = timings[slot] if timings else None
+        duration = timed.duration if timed else clip_duration
+        if footage_source and scene is not None and scene.footage:
+            item = stock_clip(scene.footage, duration)
+            if item is not None:
+                return item, f"footage: {scene.footage}"
+        while not stop.is_set():
+            if scene is not None:
+                idea, narration, variation = scene.idea, scene.narration, 0
+            else:
+                idea, variation = next_keyword()
+                narration = timed.narration if timed else ""
+            item = claude_animation.generate_video(
+                search_term=idea,
+                duration=duration,
+                video_aspect=video_aspect,
+                output_dir=output_dir,
+                subject=subject,
+                script=script,
+                variation=variation,
+                look=look,
+                narration=narration,
+                position=(slot + 1, clips_needed) if planned else None,
+            )
+            if item is not None:
+                return item, idea
+            if not take_retry():
+                break
+            # The scene is retried with a keyword in the same place, so the
+            # clip order still follows the narration.
+            scene = None
+        if footage_source and not stop.is_set():
+            # Footage that roughly fits beats a hole in the video.
+            query = next_keyword()[0]
+            item = stock_clip(query, duration)
+            if item is not None:
+                return item, f"footage: {query}"
+        return None
+
     try:
         # One request plans the whole video: a shared look and one idea per clip.
         # Without a usable plan every clip falls back to a script keyword.
@@ -3776,60 +3953,74 @@ def _generate_videos_claude_animation(
             script=script, scene_count=clips_needed, duration=clip_duration,
             video_aspect=video_aspect, subject=subject, timings=timings,
         )
-        planned = plan.scenes if plan else ()
+        planned_scenes = plan.scenes if plan else ()
         look = plan.look if plan else ""
-        # Seconds of narration left uncovered by scenes that were skipped. The
-        # next scene plays that much longer, so later scenes stay in step.
-        carried = 0.0
-        for slot in range(clips_needed):
-            scene = planned[slot] if slot < len(planned) else None
-            timed = timings[slot] if timings else None
-            slot_duration = round(timed.duration + carried, 1) if timed else clip_duration
-            while True:
-                if scene is not None:
-                    idea, narration, variation = scene.idea, scene.narration, 0
-                else:
-                    idea = terms[keyword_index % len(terms)]
-                    narration = timed.narration if timed else ""
-                    variation = keyword_index // len(terms)
-                    keyword_index += 1
-                item = claude_animation.generate_video(
-                    search_term=idea,
-                    duration=slot_duration,
-                    video_aspect=video_aspect,
-                    output_dir=utils.task_dir(task_id),
-                    subject=subject,
-                    script=script,
-                    variation=variation,
-                    look=look,
-                    narration=narration,
-                    position=(slot + 1, clips_needed) if plan else None,
-                )
-                if item is not None or retries_left <= 0:
-                    break
-                # The slot is retried with a keyword so the clip order still
-                # follows the narration.
-                retries_left -= 1
-                scene = None
-            if item is None:
-                carried = slot_duration if timed else 0.0
-                continue
-            carried = 0.0
+        workers = min(claude_animation.concurrency(), clips_needed)
+        run_scene = logging_utils.bind_log_scope(make_scene)
+        with ThreadPoolExecutor(max_workers=workers, thread_name_prefix="animation-scene") as executor:
+            futures = {
+                executor.submit(
+                    copy_context().run, run_scene, slot,
+                    planned_scenes[slot] if slot < len(planned_scenes) else None,
+                    look, plan is not None,
+                ): slot
+                for slot in range(clips_needed)
+            }
+            try:
+                for future in as_completed(futures):
+                    made = future.result()
+                    if made is None:
+                        continue
+                    results[futures[future]] = made
+                    logger.info(
+                        f"claude animation clip ready: {len(results)}/{clips_needed}, "
+                        f"scene {futures[future] + 1}={made[1]!r}"
+                    )
+                    if progress_callback is not None:
+                        progress_callback(min(len(results) / clips_needed, 1.0))
+            except BaseException:
+                # One scene's fatal error (Claude not logged in, usage limit)
+                # holds for all of them: do not start the scenes still queued.
+                stop.set()
+                executor.shutdown(wait=True, cancel_futures=True)
+                raise
+        if timings and results:
+            _cover_skipped_scenes(timings, results)
+    finally:
+        for slot in sorted(results):
+            item, _idea = results[slot]
             paths.append(item.url)
             sources.append(_material_source_record(item, item.url))
-            logger.info(
-                f"claude animation clip rendered: {len(paths)}/{clips_needed}, scene={idea!r}"
-            )
-            if progress_callback is not None:
-                progress_callback(min(len(paths) / clips_needed, 1.0))
-    finally:
         _persist_material_sources(task_id, sources)
     if not paths:
         raise claude_animation.ClaudeAnimationError(
             "Claude animation produced no clips; see the log for each scene's failure"
         )
-    logger.success(f"rendered {len(paths)} Claude animation clips")
+    logger.success(f"prepared {len(paths)} Claude animation clips")
     return paths
+
+
+def _cover_skipped_scenes(timings, results: dict[int, tuple[MaterialInfo, str]]) -> None:
+    """Keep later scenes under their narration when a scene was skipped.
+
+    The scene before the gap holds its last frame for the missing time; a gap
+    at the very start is covered by the first frame of the scene after it.
+    """
+    made = sorted(results)
+    holds: dict[tuple[int, bool], float] = {}
+    for slot, timed in enumerate(timings):
+        if slot in results:
+            continue
+        earlier = [index for index in made if index < slot]
+        target = (earlier[-1], False) if earlier else (made[0], True)
+        holds[target] = holds.get(target, 0.0) + timed.duration
+    for (slot, at_start), seconds in holds.items():
+        held = _hold_frame(results[slot][0].url, round(seconds, 1), at_start=at_start)
+        logger.warning(
+            f"claude animation scene {slot + 1} "
+            + ("holds a frame" if held else "could not be extended")
+            + f" for {seconds:.1f}s to cover skipped scenes"
+        )
 
 
 def _download_videos_infistar_on_demand(

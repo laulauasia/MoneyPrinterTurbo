@@ -3852,6 +3852,29 @@ def _render_material_provider_settings(provider):
         )
         if claude_animation_preset:
             st.caption(animation_presets[claude_animation_preset].summary)
+        saved_animation_footage = claude_animation.footage_source(app_settings)
+        claude_animation_footage = stable_selectbox(
+            tr("Claude Code Animation Footage"),
+            options=["", *claude_animation.FOOTAGE_SOURCES],
+            default_value=saved_animation_footage,
+            key="claude_animation_footage_input",
+            format_func=lambda source: (
+                source.capitalize()
+                if source
+                else tr("Claude Code Animation Footage None")
+            ),
+            help=tr("Claude Code Animation Footage Help"),
+            on_change=_save_settings_change,
+            args=(
+                "app",
+                "claude_animation_footage_source",
+                localized_widget_key("claude_animation_footage_input"),
+                lambda value: value,
+            ),
+        )
+        _set_runtime_config(
+            "app", "claude_animation_footage_source", claude_animation_footage
+        )
         claude_animation_style = st.text_area(
             tr("Claude Code Animation Style"),
             value=str(app_settings.get("claude_animation_style", "") or ""),

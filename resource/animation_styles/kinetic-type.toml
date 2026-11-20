@@ -1,0 +1,42 @@
+name = "Kinetic Type"
+summary = "Typography is the picture: huge words that slide, stack and snap on a plain field."
+direction = '''
+- The words are the image. No illustrations; at most one bar, line or dot as
+  an accent.
+- Two colours plus one accent: a near-black or off-white field, text in the
+  opposite, one saturated accent for a single key word or bar.
+- Type: Oswald 700 upper case for the big words (200px and up at 1080 wide),
+  Inter 500 for one small supporting line. Tight line height, left aligned on
+  a shared margin.
+- Two to five words per scene, each on its own line, revealed one at a time.
+- Motion: every line sits in a wrapper with overflow hidden and rises from
+  below it (power4.out, 0.5s), 0.25s apart. Then the whole block eases a few
+  pixels sideways so the frame never freezes.
+'''
+example = '''
+```css
+#kt-stage { position: absolute; inset: 0; background: #111111; }
+#kt-block { position: absolute; left: 90px; top: 380px; width: 900px; }
+.kt-line { overflow: hidden; height: 250px; }
+.kt-word { font: 700 230px Oswald, sans-serif; line-height: 250px; color: #f4f1ea; text-transform: uppercase; }
+#kt-w3 { color: #ff4d2e; }
+#kt-bar { position: absolute; left: 90px; top: 1160px; width: 420px; height: 18px; background: #ff4d2e; }
+```
+```html
+<div id="kt-stage" class="clip" data-start="0" data-duration="4" data-track-index="0">
+  <div id="kt-block">
+    <div class="kt-line"><div class="kt-word" id="kt-w1">Start</div></div>
+    <div class="kt-line"><div class="kt-word" id="kt-w2">Small</div></div>
+    <div class="kt-line"><div class="kt-word" id="kt-w3">Today</div></div>
+  </div>
+  <div id="kt-bar"></div>
+</div>
+```
+```js
+tl.fromTo("#kt-w1", { yPercent: 110 }, { yPercent: 0, duration: 0.5, ease: "power4.out" }, 0.1);
+tl.fromTo("#kt-w2", { yPercent: 110 }, { yPercent: 0, duration: 0.5, ease: "power4.out" }, 0.35);
+tl.fromTo("#kt-w3", { yPercent: 110 }, { yPercent: 0, duration: 0.5, ease: "power4.out" }, 0.6);
+tl.fromTo("#kt-bar", { scaleX: 0, transformOrigin: "0% 50%" }, { scaleX: 1, duration: 0.6, ease: "power3.out" }, 0.95);
+tl.fromTo("#kt-block", { x: 0 }, { x: 24, duration: 2.3, ease: "sine.inOut" }, 1.5);
+```
+'''

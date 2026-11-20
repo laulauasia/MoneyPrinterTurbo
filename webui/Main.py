@@ -48,6 +48,7 @@ from app.models.schema import (
 from app.services import bgm as bgm_service
 from app.services import material_upload as material_upload_service
 from app.services import (
+    animation_styles,
     cache_manager,
     claude_animation,
     llm,
@@ -3819,6 +3820,38 @@ def _render_material_provider_settings(provider):
         _set_runtime_config(
             "app", "claude_animation_model", claude_animation_model.strip()
         )
+        animation_presets = {
+            style.slug: style for style in animation_styles.list_styles()
+        }
+        saved_animation_preset = str(
+            app_settings.get("claude_animation_style_preset", "") or ""
+        )
+        if saved_animation_preset not in animation_presets:
+            saved_animation_preset = ""
+        claude_animation_preset = stable_selectbox(
+            tr("Claude Code Animation Preset"),
+            options=["", *animation_presets],
+            default_value=saved_animation_preset,
+            key="claude_animation_preset_input",
+            format_func=lambda slug: (
+                animation_presets[slug].name
+                if slug
+                else tr("Claude Code Animation Preset None")
+            ),
+            help=tr("Claude Code Animation Preset Help"),
+            on_change=_save_settings_change,
+            args=(
+                "app",
+                "claude_animation_style_preset",
+                localized_widget_key("claude_animation_preset_input"),
+                lambda value: value,
+            ),
+        )
+        _set_runtime_config(
+            "app", "claude_animation_style_preset", claude_animation_preset
+        )
+        if claude_animation_preset:
+            st.caption(animation_presets[claude_animation_preset].summary)
         claude_animation_style = st.text_area(
             tr("Claude Code Animation Style"),
             value=str(app_settings.get("claude_animation_style", "") or ""),

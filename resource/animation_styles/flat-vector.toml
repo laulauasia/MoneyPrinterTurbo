@@ -1,0 +1,34 @@
+name = "Flat Vector"
+summary = "Bold flat shapes on solid colour, no gradients or shadows. Friendly explainer look."
+direction = '''
+- Solid flat fills only: no gradients, shadows, blur, textures or outlines.
+- Palette of four: one deep background colour, two mid tones, one bright accent
+  used once per scene for the thing that matters.
+- Build pictures from circles, rounded rectangles and simple SVG paths. Large
+  shapes, generous empty space, nothing smaller than 40px.
+- Type: Montserrat 800, upper case, white or the accent, at most three words.
+- Motion: shapes pop in with a slight overshoot (back.out) or slide in from an
+  edge (power3.out), staggered 0.15s apart, then drift slowly for the rest of
+  the scene.
+'''
+example = '''
+```css
+#fv-stage { position: absolute; inset: 0; background: #0f2a4a; }
+#fv-hill { position: absolute; left: -100px; top: 900px; width: 1280px; height: 1100px; border-radius: 640px 640px 0 0; background: #1f6f8b; }
+#fv-sun { position: absolute; left: 340px; top: 430px; width: 400px; height: 400px; border-radius: 50%; background: #ffb300; }
+#fv-word { position: absolute; left: 0; top: 210px; width: 100%; text-align: center; font: 800 120px Montserrat, sans-serif; color: #ffffff; letter-spacing: 4px; }
+```
+```html
+<div id="fv-stage" class="clip" data-start="0" data-duration="4" data-track-index="0">
+  <div id="fv-sun"></div>
+  <div id="fv-hill"></div>
+  <div id="fv-word">NEW DAY</div>
+</div>
+```
+```js
+tl.fromTo("#fv-hill", { y: 1100 }, { y: 0, duration: 1.1, ease: "power3.out" }, 0);
+tl.fromTo("#fv-sun", { scale: 0 }, { scale: 1, duration: 0.9, ease: "back.out(1.6)" }, 0.25);
+tl.fromTo("#fv-word", { opacity: 0, y: 60 }, { opacity: 1, y: 0, duration: 0.7, ease: "power3.out" }, 0.9);
+tl.fromTo("#fv-sun", { y: 0 }, { y: -70, duration: 2.5, ease: "sine.inOut" }, 1.3);
+```
+'''

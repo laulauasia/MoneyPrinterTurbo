@@ -3747,30 +3747,55 @@ def _generate_videos_claude_animation(
         return paths
 
     clips_needed = math.ceil(required / clip_duration)
+    subject = str(context.get("subject") or "")
+    script = str(context.get("script") or "")
     # A script usually has fewer keywords than the voiceover needs clips, so the
     # keywords are reused in order. Skipped scenes get a bounded number of extra
     # tries; without the cap a prompt that never renders would loop forever.
-    scene_budget = clips_needed + max(len(terms), 2)
+    retries_left = max(len(terms), 2)
+    keyword_index = 0
     try:
-        for index in range(scene_budget):
-            if len(paths) >= clips_needed:
-                break
-            term = terms[index % len(terms)]
-            item = claude_animation.generate_video(
-                search_term=term,
-                duration=clip_duration,
-                video_aspect=video_aspect,
-                output_dir=utils.task_dir(task_id),
-                subject=str(context.get("subject") or ""),
-                script=str(context.get("script") or ""),
-                variation=index // len(terms),
-            )
+        # One request plans the whole video: a shared look and one idea per clip.
+        # Without a usable plan every clip falls back to a script keyword.
+        plan = claude_animation.plan_scenes(
+            script=script, scene_count=clips_needed, duration=clip_duration,
+            video_aspect=video_aspect, subject=subject,
+        )
+        planned = plan.scenes if plan else ()
+        look = plan.look if plan else ""
+        for slot in range(clips_needed):
+            scene = planned[slot] if slot < len(planned) else None
+            while True:
+                if scene is not None:
+                    idea, narration, variation = scene.idea, scene.narration, 0
+                else:
+                    idea = terms[keyword_index % len(terms)]
+                    narration, variation = "", keyword_index // len(terms)
+                    keyword_index += 1
+                item = claude_animation.generate_video(
+                    search_term=idea,
+                    duration=clip_duration,
+                    video_aspect=video_aspect,
+                    output_dir=utils.task_dir(task_id),
+                    subject=subject,
+                    script=script,
+                    variation=variation,
+                    look=look,
+                    narration=narration,
+                    position=(slot + 1, clips_needed) if plan else None,
+                )
+                if item is not None or retries_left <= 0:
+                    break
+                # The slot is retried with a keyword so the clip order still
+                # follows the narration.
+                retries_left -= 1
+                scene = None
             if item is None:
                 continue
             paths.append(item.url)
             sources.append(_material_source_record(item, item.url))
             logger.info(
-                f"claude animation clip rendered: {len(paths)}/{clips_needed}, term={term!r}"
+                f"claude animation clip rendered: {len(paths)}/{clips_needed}, scene={idea!r}"
             )
             if progress_callback is not None:
                 progress_callback(min(len(paths) / clips_needed, 1.0))

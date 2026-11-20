@@ -4,6 +4,10 @@ Each clip is one scene: the logged-in ``claude`` CLI writes the styles, markup
 and GSAP tweens, this module wraps them in a HyperFrames document it owns, and
 ``hyperframes render`` turns that into an MP4. Nothing is billed per clip; the
 calls count against the Claude subscription's usage limits.
+
+A video is planned before its scenes are written: one extra request turns the
+script into a shared look and one idea per clip (``plan_scenes``), so separately
+written scenes follow the narration and look like one piece.
 """
 
 from __future__ import annotations
@@ -16,6 +20,7 @@ import subprocess
 import tempfile
 import uuid
 from collections.abc import Mapping
+from dataclasses import dataclass
 from pathlib import Path
 from typing import Any
 
@@ -23,7 +28,8 @@ from loguru import logger
 
 from app.config import config
 from app.models.schema import MaterialInfo, VideoAspect
-from app.services import llm
+from app.services import animation_styles, llm
+from app.services.animation_styles import AnimationStyle
 
 PROVIDER_ID = "claude_animation"
 # Pinned so a rebuilt image or a cold npx cache cannot change render behaviour.
@@ -37,6 +43,11 @@ QUALITIES = ("draft", "looks", "delivery")
 DEFAULT_MAX_ATTEMPTS = 2
 MAX_ERROR_TEXT_LENGTH = 600
 MAX_SCRIPT_CONTEXT_LENGTH = 1500
+MAX_PLAN_SCRIPT_LENGTH = 6000
+MAX_PLAN_SCENES = 60
+MAX_LOOK_LENGTH = 1200
+MAX_IDEA_LENGTH = 400
+MAX_NARRATION_LENGTH = 300
 
 RECOVERY_REPAIR = "repair"
 RECOVERY_SKIP = "skip"
@@ -46,6 +57,12 @@ SYSTEM_PROMPT = (
     "You are a motion designer who writes HyperFrames scenes: HTML, CSS and "
     "GSAP tweens that a renderer seeks frame by frame. Follow the output format "
     "exactly and output nothing else."
+)
+
+PLAN_SYSTEM_PROMPT = (
+    "You are the art director of a short animated video. You turn a narration "
+    "script into a shot list for motion designers. Output only the JSON object "
+    "you are asked for."
 )
 
 _XML_NAMESPACE_RE = re.compile(r"https?://www\.w3\.org/[\w./#-]*", re.IGNORECASE)
@@ -151,6 +168,153 @@ def max_attempts(settings: Mapping[str, Any] | None = None) -> int:
     return int(_bounded_float(_settings(settings), "claude_animation_max_attempts", DEFAULT_MAX_ATTEMPTS, 1, 4))
 
 
+def planning_enabled(settings: Mapping[str, Any] | None = None) -> bool:
+    value = _settings(settings).get("claude_animation_plan", True)
+    if isinstance(value, str):
+        return value.strip().lower() not in ("", "0", "false", "no", "off")
+    return bool(value)
+
+
+def style_preset(settings: Mapping[str, Any] | None = None) -> AnimationStyle | None:
+    """The configured named style, or ``None`` when none is set or its file is gone."""
+    return animation_styles.get_style(_text(_settings(settings), "claude_animation_style_preset"))
+
+
+@dataclass(frozen=True)
+class PlannedScene:
+    idea: str
+    narration: str = ""
+
+
+@dataclass(frozen=True)
+class ScenePlan:
+    look: str
+    scenes: tuple[PlannedScene, ...]
+
+
+def _style_lines(preset: AnimationStyle | None, notes: str, *, with_example: bool) -> list[str]:
+    lines = []
+    if preset is not None:
+        lines.append(f"Style: {preset.name}\n{preset.direction}")
+        if with_example and preset.example:
+            lines.append(
+                "Reference scene in this style. It shows the style's vocabulary only: "
+                "do not copy its composition, text or subject.\n" + preset.example
+            )
+    if notes:
+        lines.append(f"Art direction: {notes}")
+    return lines
+
+
+def build_plan_prompt(
+    *,
+    script: str,
+    scene_count: int,
+    duration: int,
+    width: int,
+    height: int,
+    subject: str = "",
+    preset: AnimationStyle | None = None,
+    style: str = "",
+) -> str:
+    lines = [
+        f"Plan a {width}x{height} animated video of exactly {scene_count} scenes, "
+        f"{duration} seconds each, played in order under this narration.",
+    ]
+    if subject:
+        lines.append(f"Video topic: {subject}")
+    lines.append("Narration:\n" + script[:MAX_PLAN_SCRIPT_LENGTH])
+    lines += _style_lines(preset, style, with_example=False)
+    lines.append(
+        f"""
+Split the narration into {scene_count} consecutive parts of similar length, one per
+scene, and decide what each scene shows. Scenes are drawn with HTML, CSS and inline
+SVG shapes and a few large words: no photos, no footage, no realistic people.
+
+Output one JSON object and nothing else:
+{{
+  "look": "at most 80 words every scene must follow: background, 3-5 colours as hex, typeface, shape language, how things move",
+  "scenes": [
+    {{"narration": "the part of the narration this scene plays under", "idea": "what is on screen and how it moves, in one or two sentences"}}
+  ]
+}}
+
+Rules:
+- Exactly {scene_count} scenes, in narration order.
+- Each idea is concrete and visual (a chart filling, a coin stack growing, a path
+  being drawn), never a restatement of the narration.
+- Vary the composition from scene to scene; keep the look identical."""
+    )
+    return "\n".join(lines)
+
+
+def parse_plan(reply: str, scene_count: int) -> ScenePlan:
+    """Read the planner's JSON; raises ``_SceneFailure`` when it is unusable."""
+    text = reply or ""
+    start, end = text.find("{"), text.rfind("}")
+    if start < 0 or end <= start:
+        raise _SceneFailure("plan", "reply has no JSON object")
+    try:
+        payload = json.loads(text[start:end + 1])
+    except json.JSONDecodeError as exc:
+        raise _SceneFailure("plan", f"reply is not valid JSON: {exc}") from None
+    entries = payload.get("scenes") if isinstance(payload, dict) else None
+    if not isinstance(entries, list):
+        raise _SceneFailure("plan", 'JSON has no "scenes" list')
+    scenes = []
+    for entry in entries[:scene_count]:
+        idea = str(entry.get("idea") or "").strip() if isinstance(entry, dict) else ""
+        if not idea:
+            continue
+        scenes.append(
+            PlannedScene(
+                idea=idea[:MAX_IDEA_LENGTH],
+                narration=str(entry.get("narration") or "").strip()[:MAX_NARRATION_LENGTH],
+            )
+        )
+    if not scenes:
+        raise _SceneFailure("plan", "the plan has no usable scenes")
+    return ScenePlan(look=str(payload.get("look") or "").strip()[:MAX_LOOK_LENGTH], scenes=tuple(scenes))
+
+
+def plan_scenes(
+    *,
+    script: str,
+    scene_count: int,
+    duration: int,
+    video_aspect: VideoAspect,
+    subject: str = "",
+    settings: Mapping[str, Any] | None = None,
+) -> ScenePlan | None:
+    """Plan the whole video in one request.
+
+    Returns ``None`` when planning is off, there is no script, or the plan is
+    unusable; the caller then falls back to one scene per keyword. A plan may
+    hold fewer scenes than asked for.
+    """
+    source = _settings(settings)
+    script = (script or "").strip()
+    scene_count = min(int(scene_count), MAX_PLAN_SCENES)
+    if not planning_enabled(source) or not script or scene_count <= 0:
+        return None
+    width, height = VideoAspect(video_aspect).to_resolution()
+    prompt = build_plan_prompt(
+        script=script, scene_count=scene_count, duration=int(duration),
+        width=width, height=height, subject=subject,
+        preset=style_preset(source), style=_text(source, "claude_animation_style"),
+    )
+    try:
+        plan = parse_plan(_ask_claude(prompt, source, system_prompt=PLAN_SYSTEM_PROMPT), scene_count)
+    except _SceneFailure as failure:
+        logger.warning(
+            "claude animation plan failed, using one scene per keyword instead: "
+            f"{failure.detail[:MAX_ERROR_TEXT_LENGTH]}"
+        )
+        return None
+    logger.info(f"claude animation plan: {len(plan.scenes)}/{scene_count} scenes, look={plan.look!r}")
+    return plan
+
+
 def decide_recovery(stage: str, attempt: int, attempts_allowed: int, detail: str) -> str:
     """Choose what happens after one scene attempt fails.
 
@@ -178,6 +342,10 @@ def build_prompt(
     subject: str = "",
     script: str = "",
     style: str = "",
+    preset: AnimationStyle | None = None,
+    look: str = "",
+    narration: str = "",
+    position: tuple[int, int] | None = None,
     variation: int = 0,
     feedback: str = "",
 ) -> str:
@@ -185,15 +353,26 @@ def build_prompt(
         f"Write one animated scene for a {width}x{height} video, exactly {duration} seconds long.",
         f"Scene idea: {scene}",
     ]
+    if position:
+        lines.append(f"This is scene {position[0]} of {position[1]} in the video.")
+    if narration:
+        lines.append(
+            "The narrator says this while the scene plays (do not put it on screen "
+            f"word for word): {narration}"
+        )
     if subject:
         lines.append(f"Video topic: {subject}")
-    if script:
+    if script and not narration:
         lines.append(
             "Narration of the whole video, for context only (do not put it on screen):\n"
             + script[:MAX_SCRIPT_CONTEXT_LENGTH]
         )
-    if style:
-        lines.append(f"Art direction: {style}")
+    if look:
+        lines.append(
+            "Look shared by every scene of this video. Follow it exactly so the "
+            f"scenes match: {look}"
+        )
+    lines += _style_lines(preset, style, with_example=True)
     if variation:
         lines.append(
             f"This idea was already used {variation} time(s) in this video: "
@@ -293,7 +472,7 @@ def build_document(blocks: Mapping[str, str], *, duration: int, width: int, heig
 """
 
 
-def _ask_claude(prompt: str, settings: Mapping[str, Any]) -> str:
+def _ask_claude(prompt: str, settings: Mapping[str, Any], *, system_prompt: str = SYSTEM_PROMPT) -> str:
     cli_path = claude_cli_path(settings)
     if not cli_path:
         raise ClaudeAnimationUnavailableError(
@@ -306,7 +485,7 @@ def _ask_claude(prompt: str, settings: Mapping[str, Any]) -> str:
     # CLAUDE.md, skills, hooks or MCP, and the prompt goes in on stdin.
     command = [
         cli_path, "-p", "--output-format", "json",
-        "--system-prompt", SYSTEM_PROMPT,
+        "--system-prompt", system_prompt,
         "--tools", "",
         "--safe-mode",
     ]
@@ -418,10 +597,18 @@ def generate_video(
     subject: str = "",
     script: str = "",
     variation: int = 0,
+    look: str = "",
+    narration: str = "",
+    position: tuple[int, int] | None = None,
     settings: Mapping[str, Any] | None = None,
 ) -> MaterialInfo | None:
-    """Author and render one clip. Returns ``None`` when the scene is skipped."""
+    """Author and render one clip. Returns ``None`` when the scene is skipped.
+
+    ``search_term`` is the scene idea: a planned idea or a bare keyword.
+    ``look``, ``narration`` and ``position`` come from ``plan_scenes``.
+    """
     source = _settings(settings)
+    preset = style_preset(source)
     duration = int(duration)
     if duration <= 0:
         raise ClaudeAnimationError("Claude animation clip duration must be a positive integer")
@@ -441,6 +628,7 @@ def generate_video(
                     scene=search_term, duration=duration, width=width, height=height,
                     subject=subject, script=script,
                     style=_text(source, "claude_animation_style"),
+                    preset=preset, look=look, narration=narration, position=position,
                     variation=variation, feedback=feedback,
                 ),
                 source,
@@ -477,6 +665,7 @@ def generate_video(
             source_info={
                 "provider": PROVIDER_ID,
                 "search_term": search_term,
+                "style": preset.slug if preset else "",
                 "rendition": {"width": width, "height": height},
             },
         )

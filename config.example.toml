@@ -174,9 +174,17 @@ openrouter_video_run_timeout = 1800
 claude_animation_model = ""
 claude_animation_cli_path = ""
 claude_animation_hyperframes_path = ""
-# Optional art direction applied to every scene, e.g. "flat vector, navy and
-# amber, bold sans-serif".
+# Named style applied to every scene: the file name (without .toml) of a style in
+# resource/animation_styles, e.g. "flat-vector", "kinetic-type", "paper-cutout"
+# or "data-ink". Add your own as storage/animation_styles/<name>.toml with
+# name, summary, direction and an optional example scene. Empty = no preset.
+claude_animation_style_preset = ""
+# Optional extra art direction added on top of the preset, e.g. "navy and amber".
 claude_animation_style = ""
+# Plan the whole video first: one extra Claude request turns the script into a
+# shared look and one scene idea per clip, so scenes follow the narration and
+# match each other. false = one scene per script keyword.
+claude_animation_plan = true
 # draft (fastest), looks or delivery.
 claude_animation_quality = "draft"
 # Attempts per scene, including the first one (1-4).

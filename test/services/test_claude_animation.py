@@ -6,7 +6,7 @@ import unittest
 from unittest.mock import patch
 
 from app.models.schema import VideoAspect
-from app.services import claude_animation, material
+from app.services import animation_styles, claude_animation, material
 
 GOOD_REPLY = """```css
 #s-bg { position: absolute; inset: 0; background: #123; }
@@ -212,8 +212,142 @@ class TestClaudeAnimation(unittest.TestCase):
         self.assertEqual(path, "/opt/claude")
 
 
+PLAN_REPLY = json.dumps(
+    {
+        "look": "navy field, amber accent, Montserrat",
+        "scenes": [
+            {"narration": "Start early.", "idea": "a seed sprouting into a small plant"},
+            {"narration": "Gains earn gains.", "idea": "coins stacking into a rising staircase"},
+        ],
+    }
+)
+
+
+class TestAnimationStyles(unittest.TestCase):
+    def test_every_built_in_example_is_a_valid_scene(self):
+        styles = animation_styles.list_styles()
+
+        self.assertGreaterEqual(len(styles), 4)
+        for style in styles:
+            with self.subTest(style=style.slug):
+                self.assertTrue(style.summary)
+                blocks = claude_animation.parse_scene(style.example)
+                self.assertIn('class="clip"', blocks["html"])
+
+    def test_user_style_replaces_a_built_in_and_bad_files_are_ignored(self):
+        built_in, user = tempfile.mkdtemp(), tempfile.mkdtemp()
+        for directory, name, body in (
+            (built_in, "flat-vector.toml", 'name = "Flat"\ndirection = "built in"'),
+            (user, "flat-vector.toml", 'name = "Mine"\ndirection = "my rules"'),
+            (user, "no-direction.toml", 'name = "Empty"'),
+            (user, "broken.toml", "name = "),
+            (user, "Bad Name.toml", 'direction = "x"'),
+        ):
+            with open(os.path.join(directory, name), "w", encoding="utf-8") as handle:
+                handle.write(body)
+
+        with patch.object(animation_styles, "_directories", return_value=[built_in, user]):
+            styles = animation_styles.list_styles()
+            missing = animation_styles.get_style("nope")
+
+        self.assertEqual([(style.slug, style.name, style.direction) for style in styles],
+                         [("flat-vector", "Mine", "my rules")])
+        self.assertIsNone(missing)
+
+
+class TestClaudeAnimationPlanning(unittest.TestCase):
+    def setUp(self):
+        self.settings = {"claude_animation_max_attempts": 1}
+        patcher = patch.object(claude_animation.config, "app", self.settings)
+        patcher.start()
+        self.addCleanup(patcher.stop)
+        which = patch.object(
+            claude_animation.shutil, "which", side_effect=lambda name: f"/usr/bin/{name}"
+        )
+        which.start()
+        self.addCleanup(which.stop)
+
+    def _plan(self, tools, **overrides):
+        options = {
+            "script": "Start early. Gains earn gains.",
+            "scene_count": 2,
+            "duration": 5,
+            "video_aspect": VideoAspect.portrait,
+            "subject": "Saving money",
+        }
+        options.update(overrides)
+        with patch.object(claude_animation.subprocess, "run", side_effect=tools):
+            return claude_animation.plan_scenes(**options)
+
+    def test_plan_gives_a_shared_look_and_one_idea_per_scene(self):
+        tools = _FakeTools([_claude_reply("Here it is:\n```json\n" + PLAN_REPLY + "\n```")])
+
+        plan = self._plan(tools)
+
+        self.assertEqual(plan.look, "navy field, amber accent, Montserrat")
+        self.assertEqual([scene.idea for scene in plan.scenes],
+                         ["a seed sprouting into a small plant", "coins stacking into a rising staircase"])
+        self.assertEqual(plan.scenes[0].narration, "Start early.")
+        self.assertIn("exactly 2 scenes", tools.prompts[0])
+        self.assertIn("Gains earn gains.", tools.prompts[0])
+        command = tools.commands[0]
+        self.assertEqual(command[command.index("--system-prompt") + 1], claude_animation.PLAN_SYSTEM_PROMPT)
+
+    def test_extra_planned_scenes_are_dropped(self):
+        plan = self._plan(_FakeTools([_claude_reply(PLAN_REPLY)]), scene_count=1)
+
+        self.assertEqual(len(plan.scenes), 1)
+
+    def test_unusable_plan_falls_back_instead_of_failing(self):
+        for reply in ("no json here", '{"scenes": "nope"}', '{"scenes": [{"idea": ""}]}', "{broken"):
+            with self.subTest(reply=reply):
+                self.assertIsNone(self._plan(_FakeTools([_claude_reply(reply)])))
+
+    def test_no_request_is_made_without_a_script_or_when_planning_is_off(self):
+        tools = _FakeTools([])
+
+        self.assertIsNone(self._plan(tools, script="  "))
+        self.settings["claude_animation_plan"] = "false"
+        self.assertIsNone(self._plan(tools))
+        self.assertEqual(tools.prompts, [])
+
+    def test_login_error_while_planning_stops_the_task(self):
+        tools = _FakeTools([_claude_reply("Not logged in · Please run /login", is_error=True)])
+
+        with self.assertRaises(claude_animation.ClaudeAnimationUnavailableError):
+            self._plan(tools)
+
+    def test_scene_prompt_carries_the_plan_and_the_style_preset(self):
+        self.settings["claude_animation_style_preset"] = "flat-vector"
+        self.settings["claude_animation_style"] = "navy and amber"
+        tools = _FakeTools([_claude_reply(GOOD_REPLY)])
+
+        with patch.object(claude_animation.subprocess, "run", side_effect=tools):
+            item = claude_animation.generate_video(
+                search_term="a seed sprouting", duration=4, video_aspect=VideoAspect.portrait,
+                output_dir=tempfile.mkdtemp(), script="Whole script.", look="navy field",
+                narration="Start early.", position=(1, 3),
+            )
+
+        prompt = tools.prompts[0]
+        self.assertEqual(item.source_info["style"], "flat-vector")
+        self.assertIn("Style: Flat Vector", prompt)
+        self.assertIn("Reference scene in this style", prompt)
+        self.assertIn("Art direction: navy and amber", prompt)
+        self.assertIn("scene 1 of 3", prompt)
+        self.assertIn("Follow it exactly so the scenes match: navy field", prompt)
+        self.assertIn("Start early.", prompt)
+        # The scene's own narration replaces the whole-script context.
+        self.assertNotIn("Whole script.", prompt)
+
+    def test_unknown_preset_is_ignored(self):
+        self.settings["claude_animation_style_preset"] = "deleted-style"
+
+        self.assertIsNone(claude_animation.style_preset())
+
+
 class TestClaudeAnimationMaterials(unittest.TestCase):
-    def _run(self, results, **overrides):
+    def _run(self, results, plan=None, **overrides):
         calls = []
 
         def fake_generate(**kwargs):
@@ -230,11 +364,57 @@ class TestClaudeAnimationMaterials(unittest.TestCase):
         options.update(overrides)
         with (
             patch.object(material.claude_animation, "generate_video", side_effect=fake_generate),
+            patch.object(material.claude_animation, "plan_scenes", return_value=plan) as plan_scenes,
             patch.object(material, "_persist_material_sources") as persist,
             patch.object(material.utils, "task_dir", return_value="/tmp/task"),
         ):
             paths = material._generate_videos_claude_animation(**options)
+        self.plan_call = plan_scenes.call_args
         return paths, calls, persist
+
+    @staticmethod
+    def _plan(*ideas):
+        return material.claude_animation.ScenePlan(
+            look="shared look",
+            scenes=tuple(
+                material.claude_animation.PlannedScene(idea=idea, narration=f"said over {idea}")
+                for idea in ideas
+            ),
+        )
+
+    def test_planned_scenes_are_rendered_in_order_with_the_shared_look(self):
+        paths, calls, _ = self._run(
+            [self._item("1"), self._item("2"), self._item("3")],
+            plan=self._plan("seed", "coins", "tree"),
+            animation_context={"subject": "Topic", "script": "Words"},
+        )
+
+        self.assertEqual(len(paths), 3)
+        self.assertEqual(self.plan_call.kwargs["scene_count"], 3)
+        self.assertEqual(self.plan_call.kwargs["script"], "Words")
+        self.assertEqual([call["search_term"] for call in calls], ["seed", "coins", "tree"])
+        self.assertEqual([call["position"] for call in calls], [(1, 3), (2, 3), (3, 3)])
+        self.assertEqual({call["look"] for call in calls}, {"shared look"})
+        self.assertEqual(calls[1]["narration"], "said over coins")
+
+    def test_skipped_planned_scene_is_retried_in_place_with_a_keyword(self):
+        paths, calls, _ = self._run(
+            [self._item("1"), None, self._item("2"), self._item("3")],
+            plan=self._plan("seed", "coins", "tree"),
+        )
+
+        self.assertEqual(len(paths), 3)
+        self.assertEqual([call["search_term"] for call in calls], ["seed", "coins", "a", "tree"])
+        self.assertEqual([call["position"] for call in calls], [(1, 3), (2, 3), (2, 3), (3, 3)])
+        self.assertEqual(calls[2]["look"], "shared look")
+
+    def test_short_plan_is_topped_up_with_keywords(self):
+        paths, calls, _ = self._run(
+            [self._item("1"), self._item("2"), self._item("3")], plan=self._plan("seed")
+        )
+
+        self.assertEqual(len(paths), 3)
+        self.assertEqual([call["search_term"] for call in calls], ["seed", "a", "b"])
 
     @staticmethod
     def _item(name):

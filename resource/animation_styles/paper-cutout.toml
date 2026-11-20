@@ -1,0 +1,40 @@
+name = "Paper Cutout"
+summary = "Layered cut-paper shapes with soft shadows in warm, muted colours. Gentle, handmade feel."
+direction = '''
+- Everything looks cut from coloured paper and stacked in layers: rounded,
+  slightly irregular shapes, each with a soft drop shadow
+  (filter: drop-shadow(0 14px 18px rgba(60, 40, 20, 0.28))).
+- Warm muted palette: a cream background, then terracotta, sage, mustard and
+  dusty blue. No pure black or white, no neon.
+- Three to five layers with clear depth: big back shapes, mid shapes, one
+  small foreground detail. Back layers move less than front layers.
+- Type: Playfair Display 700, dark brown, set on its own paper label.
+- Motion: layers slide up into place one after another (power2.out, 0.8s) and
+  settle with a small rotation, then sway a few degrees or pixels, slowly.
+'''
+example = '''
+```css
+#pc-stage { position: absolute; inset: 0; background: #f3e9d8; }
+.pc-paper { position: absolute; filter: drop-shadow(0 14px 18px rgba(60, 40, 20, 0.28)); }
+#pc-back { left: -80px; top: 760px; width: 1240px; height: 800px; border-radius: 46% 54% 0 0; background: #8fa58b; }
+#pc-mid { left: 120px; top: 620px; width: 560px; height: 760px; border-radius: 280px 280px 40px 40px; background: #c9694a; }
+#pc-front { left: 600px; top: 900px; width: 300px; height: 300px; border-radius: 50%; background: #e0b04a; }
+#pc-label { left: 190px; top: 250px; width: 700px; padding: 34px 0; border-radius: 26px; background: #fbf5ea; text-align: center; font: 700 96px "Playfair Display", serif; color: #4a3223; }
+```
+```html
+<div id="pc-stage" class="clip" data-start="0" data-duration="4" data-track-index="0">
+  <div id="pc-back" class="pc-paper"></div>
+  <div id="pc-mid" class="pc-paper"></div>
+  <div id="pc-front" class="pc-paper"></div>
+  <div id="pc-label" class="pc-paper">Slow Growth</div>
+</div>
+```
+```js
+tl.fromTo("#pc-back", { y: 500 }, { y: 0, duration: 0.8, ease: "power2.out" }, 0);
+tl.fromTo("#pc-mid", { y: 900, rotation: -6 }, { y: 0, rotation: 0, duration: 0.8, ease: "power2.out" }, 0.25);
+tl.fromTo("#pc-front", { y: 700, rotation: 12 }, { y: 0, rotation: 0, duration: 0.8, ease: "power2.out" }, 0.5);
+tl.fromTo("#pc-label", { opacity: 0, y: -60 }, { opacity: 1, y: 0, duration: 0.6, ease: "power2.out" }, 0.9);
+tl.fromTo("#pc-front", { x: 0 }, { x: 36, duration: 2.2, ease: "sine.inOut" }, 1.6);
+tl.fromTo("#pc-mid", { x: 0 }, { x: -22, duration: 2.2, ease: "sine.inOut" }, 1.6);
+```
+'''

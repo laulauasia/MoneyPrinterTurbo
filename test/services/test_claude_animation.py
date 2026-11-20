@@ -32,9 +32,11 @@ def _claude_reply(text, is_error=False):
 class _FakeTools:
     """Stands in for the claude and hyperframes subprocesses."""
 
-    def __init__(self, replies, lint_findings=None, render_ok=True):
+    def __init__(self, replies, lint_findings=None, render_ok=True, review_findings=None):
         self.replies = list(replies)
         self.lint_findings = list(lint_findings or [])
+        # One {"section": [findings]} report per `hyperframes check` call.
+        self.review_findings = list(review_findings or [])
         self.render_ok = render_ok
         self.prompts = []
         self.commands = []
@@ -47,6 +49,11 @@ class _FakeTools:
         if "lint" in command:
             findings = self.lint_findings.pop(0) if self.lint_findings else []
             return _completed(json.dumps({"ok": not findings, "findings": findings}))
+        if "check" in command:
+            report = self.review_findings.pop(0) if self.review_findings else {}
+            return _completed(json.dumps(
+                {section: {"findings": findings} for section, findings in report.items()}
+            ))
         if "render" in command:
             if not self.render_ok:
                 return _completed(returncode=1, stderr="chrome crashed")
@@ -153,6 +160,107 @@ class TestClaudeAnimation(unittest.TestCase):
         self.assertIsNotNone(item)
         self.assertEqual(len(tools.prompts), 2)
         self.assertIn("gsap_animates_clip_element", tools.prompts[1])
+
+    def test_a_defect_seen_in_the_frames_is_sent_back_for_a_repair(self):
+        finding = {
+            "code": "text_box_overflow",
+            "severity": "error",
+            "message": "Text extends outside its box.",
+            "selector": "#s-title",
+            "text": "Hello",
+            "time": 1.2,
+            "fixHint": "Widen the container",
+        }
+        tools = _FakeTools(
+            [_claude_reply(GOOD_REPLY), _claude_reply(GOOD_REPLY)],
+            review_findings=[{"layout": [finding]}, {}],
+        )
+
+        item = self._generate(tools)
+
+        self.assertIsNotNone(item)
+        self.assertEqual(len(tools.prompts), 2)
+        self.assertIn("[review] text_box_overflow", tools.prompts[1])
+        self.assertIn('#s-title "Hello" at 1.2s', tools.prompts[1])
+        self.assertIn("Widen the container", tools.prompts[1])
+        # The rejected scene was never rendered.
+        self.assertEqual(sum("render" in command for command in tools.commands), 1)
+        check = next(command for command in tools.commands if "check" in command)
+        self.assertIn("x0=0;y0=0.78;x1=1;y1=1;severity=error", check)
+
+    def test_a_scene_where_nothing_moves_is_rejected_although_it_is_only_a_warning(self):
+        still = {"code": "sweep_static", "severity": "warning", "message": "Nothing moved."}
+        overflow = {"code": "panel_out_of_canvas", "severity": "warning", "message": "Panel outside."}
+        tools = _FakeTools(
+            [_claude_reply(GOOD_REPLY), _claude_reply(GOOD_REPLY)],
+            review_findings=[{"layout": [still, overflow]}, {"layout": [overflow]}],
+        )
+
+        self.assertIsNotNone(self._generate(tools))
+        self.assertEqual(len(tools.prompts), 2)
+        self.assertIn("sweep_static", tools.prompts[1])
+        self.assertNotIn("panel_out_of_canvas", tools.prompts[1])
+
+    def test_contrast_failure_suggests_a_colour(self):
+        finding = {"code": "contrast_aa_failure", "severity": "error",
+                   "message": "Contrast is 1.13:1.", "suggestedColor": "#ffffff"}
+        tools = _FakeTools(
+            [_claude_reply(GOOD_REPLY), _claude_reply(GOOD_REPLY)],
+            review_findings=[{"contrast": [finding]}],
+        )
+
+        self._generate(tools)
+
+        self.assertIn("use #ffffff", tools.prompts[1])
+
+    def test_review_can_be_switched_off(self):
+        self.settings["claude_animation_review"] = False
+        tools = _FakeTools([_claude_reply(GOOD_REPLY)])
+
+        self.assertIsNotNone(self._generate(tools))
+        self.assertFalse(any("check" in command for command in tools.commands))
+
+    def test_an_empty_rendered_frame_is_rejected_and_the_clip_removed(self):
+        tools = _FakeTools([_claude_reply(GOOD_REPLY), _claude_reply(GOOD_REPLY)])
+        verdicts = ["empty_frame: blank screen", ""]
+        with patch.object(claude_animation, "_empty_frame_error", side_effect=lambda *_: verdicts.pop(0)):
+            item = self._generate(tools)
+
+        self.assertIsNotNone(item)
+        self.assertIn("[review] empty_frame", tools.prompts[1])
+        self.assertEqual(os.listdir(self.output_dir), [os.path.basename(item.url)])
+
+    def test_empty_frame_test_tells_a_flat_frame_from_a_drawn_one(self):
+        import numpy as np
+
+        class Clip:
+            duration = 4
+
+            def __init__(self, frame):
+                self.frame = frame
+
+            def get_frame(self, _time):
+                return self.frame
+
+            def close(self):
+                pass
+
+        flat = np.full((192, 108, 3), (20, 33, 61), dtype=np.uint8)
+        drawn = flat.copy()
+        drawn[60:100, 20:90] = (255, 183, 3)
+        for frame, empty in ((flat, True), (drawn, False)):
+            with self.subTest(empty=empty), patch("moviepy.VideoFileClip", return_value=Clip(frame)):
+                self.assertEqual(bool(claude_animation._empty_frame_error("clip.mp4", 4)), empty)
+
+    def test_scene_length_may_be_a_fraction_of_a_second(self):
+        tools = _FakeTools([_claude_reply(GOOD_REPLY)])
+
+        item = self._generate(tools, duration=4.26)
+
+        self.assertEqual(item.duration, 5)
+        self.assertEqual(item.source_info["seconds"], 4.3)
+        self.assertIn("exactly 4.3 seconds long", tools.prompts[0])
+        self.assertIn('data-duration="4.3"', tools.prompts[0])
 
     def test_lint_warnings_do_not_block_the_render(self):
         warning = {"code": "nested_structure", "severity": "warning", "message": "nested"}
@@ -293,6 +401,29 @@ class TestClaudeAnimationPlanning(unittest.TestCase):
         command = tools.commands[0]
         self.assertEqual(command[command.index("--system-prompt") + 1], claude_animation.PLAN_SYSTEM_PROMPT)
 
+    def test_a_scene_without_an_idea_keeps_its_place_in_the_plan(self):
+        reply = json.dumps({"look": "x", "scenes": [{"idea": ""}, {"idea": "coins", "narration": "two"}]})
+
+        plan = self._plan(_FakeTools([_claude_reply(reply)]))
+
+        self.assertIsNone(plan.scenes[0])
+        self.assertEqual(plan.scenes[1].idea, "coins")
+
+    def test_timed_plan_keeps_the_narration_each_scene_is_cut_to(self):
+        timings = (
+            claude_animation.TimedScene(start=0, duration=4.2, narration="Start early."),
+            claude_animation.TimedScene(start=4.2, duration=6.3, narration="Gains earn gains."),
+        )
+        tools = _FakeTools([_claude_reply(PLAN_REPLY)])
+
+        plan = self._plan(tools, timings=timings)
+
+        self.assertIn("Scene 1 (4.2 s): Start early.", tools.prompts[0])
+        self.assertIn("Scene 2 (6.3 s): Gains earn gains.", tools.prompts[0])
+        self.assertNotIn("seconds each", tools.prompts[0])
+        self.assertEqual([scene.narration for scene in plan.scenes],
+                         ["Start early.", "Gains earn gains."])
+
     def test_extra_planned_scenes_are_dropped(self):
         plan = self._plan(_FakeTools([_claude_reply(PLAN_REPLY)]), scene_count=1)
 
@@ -416,6 +547,48 @@ class TestClaudeAnimationMaterials(unittest.TestCase):
         self.assertEqual(len(paths), 3)
         self.assertEqual([call["search_term"] for call in calls], ["seed", "a", "b"])
 
+    def _timed(self, *scenes):
+        timings = tuple(
+            material.claude_animation.TimedScene(start=0, duration=duration, narration=narration)
+            for duration, narration in scenes
+        )
+        return patch.object(material.claude_animation, "read_scene_timings", return_value=timings)
+
+    def test_scenes_take_their_lengths_from_the_subtitle_timings(self):
+        with self._timed((4.2, "one"), (6.3, "two")) as read:
+            paths, calls, _ = self._run(
+                [self._item("1"), self._item("2")],
+                plan=self._plan("seed", "coins"),
+                animation_context={"script": "Words", "subtitle_path": "/tmp/task/subtitle.srt"},
+            )
+
+        self.assertEqual(len(paths), 2)
+        self.assertEqual(read.call_args.args, ("/tmp/task/subtitle.srt",))
+        self.assertEqual(read.call_args.kwargs, {"total_duration": 12.0, "target_duration": 5})
+        self.assertEqual([call["duration"] for call in calls], [4.2, 6.3])
+        self.assertEqual(self.plan_call.kwargs["scene_count"], 2)
+        self.assertEqual(len(self.plan_call.kwargs["timings"]), 2)
+
+    def test_a_skipped_timed_scene_gives_its_time_to_the_next_one(self):
+        # Scene 1 fails as planned and again with each fallback keyword.
+        with self._timed((4.2, "one"), (6.3, "two"), (3.0, "three")):
+            paths, calls, _ = self._run(
+                [None, None, None, self._item("2"), self._item("3")],
+                plan=self._plan("seed", "coins", "tree"),
+                animation_context={"script": "Words", "subtitle_path": "/tmp/task/subtitle.srt"},
+            )
+
+        self.assertEqual(len(paths), 2)
+        self.assertEqual([call["duration"] for call in calls], [4.2, 4.2, 4.2, 10.5, 3.0])
+        self.assertEqual(calls[1]["narration"], "one")
+
+    def test_without_subtitle_timings_every_scene_has_the_clip_length(self):
+        with self._timed() as read:
+            _, calls, _ = self._run([self._item("1"), self._item("2"), self._item("3")])
+
+        read.assert_not_called()
+        self.assertEqual([call["duration"] for call in calls], [5, 5, 5])
+
     @staticmethod
     def _item(name):
         return material.MaterialInfo(provider="claude_animation", url=f"/tmp/task/{name}.mp4", duration=5)
@@ -445,6 +618,64 @@ class TestClaudeAnimationMaterials(unittest.TestCase):
     def test_invalid_duration_is_refused_before_any_claude_call(self):
         with self.assertRaises(material.claude_animation.ClaudeAnimationError):
             self._run([self._item("1")], audio_duration=float("nan"))
+
+
+class TestSceneTimings(unittest.TestCase):
+    def _timings(self, cues, total=0, target=5):
+        return claude_animation.scene_timings(cues, total_duration=total, target_duration=target)
+
+    def test_scenes_change_at_the_cue_nearest_the_target_length(self):
+        cues = [(0.2, 2.0, "one"), (2.1, 4.4, "two"), (4.6, 6.0, "three"),
+                (6.2, 9.8, "four"), (10.0, 11.0, "five")]
+
+        scenes = self._timings(cues, total=11.2)
+
+        # 4.6 is nearer to 5 than 6.2 is, so the first scene ends there. A third
+        # scene from 10.0 would last under two seconds, so it joins the second.
+        self.assertEqual([(scene.start, scene.duration) for scene in scenes], [(0.0, 4.6), (4.6, 7.1)])
+        self.assertEqual(scenes[1].narration, "three four five")
+
+    def test_scenes_cover_the_whole_voiceover_without_gaps(self):
+        cues = [(0.31, 1.9, "a"), (2.07, 5.33, "b"), (5.5, 8.84, "c"), (9.0, 13.21, "d"), (13.4, 16.0, "e")]
+
+        scenes = self._timings(cues, total=16.4, target=4)
+
+        self.assertEqual(scenes[0].start, 0.0)
+        for before, after in zip(scenes, scenes[1:]):
+            self.assertAlmostEqual(before.start + before.duration, after.start, places=6)
+        self.assertGreaterEqual(scenes[-1].start + scenes[-1].duration, 16.4 + 0.5)
+        self.assertEqual(" ".join(scene.narration for scene in scenes), "a b c d e")
+        self.assertTrue(all(scene.duration >= 2 for scene in scenes))
+
+    def test_a_short_last_scene_joins_the_one_before(self):
+        cues = [(0.0, 4.8, "long line"), (5.0, 5.6, "end")]
+
+        scenes = self._timings(cues, total=5.8)
+
+        self.assertEqual(len(scenes), 1)
+        self.assertEqual(scenes[0].narration, "long line end")
+        self.assertEqual(scenes[0].duration, 6.3)
+
+    def test_no_cues_means_no_timings(self):
+        self.assertEqual(self._timings([]), ())
+        self.assertEqual(self._timings([(1.0, 1.0, "empty")]), ())
+
+    def test_timings_are_read_from_an_srt_file(self):
+        with tempfile.TemporaryDirectory() as folder:
+            path = os.path.join(folder, "subtitle.srt")
+            with open(path, "w", encoding="utf-8") as handle:
+                handle.write(
+                    "1\n00:00:00,200 --> 00:00:04,400\nStart early\n\n"
+                    "2\n00:00:04,600 --> 00:00:09,000\nGains earn gains\n"
+                )
+            scenes = claude_animation.read_scene_timings(path, total_duration=9.2, target_duration=5)
+            missing = claude_animation.read_scene_timings(
+                os.path.join(folder, "none.srt"), total_duration=9.2, target_duration=5
+            )
+
+        self.assertEqual([(scene.start, scene.duration, scene.narration) for scene in scenes],
+                         [(0.0, 4.6, "Start early"), (4.6, 5.1, "Gains earn gains")])
+        self.assertEqual(missing, ())
 
 
 if __name__ == "__main__":

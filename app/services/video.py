@@ -993,10 +993,17 @@ def combine_videos(
     source_groups: dict[str, str] | None = None,
     used_video_paths: List[str] | None = None,
     progress_callback: Callable[[float], None] | None = None,
+    keep_clips_whole: bool = False,
 ) -> str:
     # Direct callers and persisted tasks can still supply the raw string.
     # Normalize it once for all downstream enum access.
     video_concat_mode = VideoConcatMode(video_concat_mode or VideoConcatMode.random)
+    if keep_clips_whole:
+        # The clips were made to measure for the narration: each plays once, in
+        # the order given and at its full length, instead of being cut into
+        # max_clip_duration slices and rearranged.
+        video_concat_mode = VideoConcatMode.sequential
+        max_clip_duration = math.inf
     audio_clip = AudioFileClip(audio_file)
     try:
         # 这里只需要读取旁白音频时长来决定素材视频拼接长度；后续不会再使用
@@ -1005,7 +1012,10 @@ def combine_videos(
     finally:
         close_clip(audio_clip)
     logger.info(f"audio duration: {audio_duration} seconds")
-    logger.info(f"maximum clip duration: {max_clip_duration} seconds")
+    logger.info(
+        "clips play whole and in order" if keep_clips_whole
+        else f"maximum clip duration: {max_clip_duration} seconds"
+    )
     required_video_duration = _get_required_video_duration(audio_duration)
     logger.info(
         f"required video duration: {required_video_duration:.2f} seconds "

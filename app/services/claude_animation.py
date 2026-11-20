@@ -8,18 +8,24 @@ calls count against the Claude subscription's usage limits.
 A video is planned before its scenes are written: one extra request turns the
 script into a shared look and one idea per clip (``plan_scenes``), so separately
 written scenes follow the narration and look like one piece.
+
+When the voiceover's subtitle timings are known, scenes are cut to them
+(``scene_timings``): each scene lasts as long as the lines spoken over it. Every
+scene is reviewed before it is accepted: ``hyperframes check`` looks at sampled
+frames in a browser, and the rendered clip is tested for an empty frame.
 """
 
 from __future__ import annotations
 
 import json
+import math
 import os
 import re
 import shutil
 import subprocess
 import tempfile
 import uuid
-from collections.abc import Mapping
+from collections.abc import Mapping, Sequence
 from dataclasses import dataclass
 from pathlib import Path
 from typing import Any
@@ -30,6 +36,7 @@ from app.config import config
 from app.models.schema import MaterialInfo, VideoAspect
 from app.services import animation_styles, llm
 from app.services.animation_styles import AnimationStyle
+from app.utils import subtitle_reader
 
 PROVIDER_ID = "claude_animation"
 # Pinned so a rebuilt image or a cold npx cache cannot change render behaviour.
@@ -48,6 +55,20 @@ MAX_PLAN_SCENES = 60
 MAX_LOOK_LENGTH = 1200
 MAX_IDEA_LENGTH = 400
 MAX_NARRATION_LENGTH = 300
+# A scene shorter than this has no time to read; it is merged into its neighbour.
+MIN_SCENE_SECONDS = 2.0
+# Scene lengths are multiples of this, which is a whole number of frames at FPS.
+SCENE_TIME_STEP = 0.1
+# The last scene runs slightly past the voiceover so the cut never falls short.
+SCENE_TAIL_SECONDS = 0.5
+REVIEW_SAMPLES = 5
+# Subtitles are drawn over the bottom of the frame; scene text must stay above.
+CAPTION_BAND_TOP = 0.78
+# Browser audits that fail a scene although HyperFrames only warns about them.
+_REVIEW_BLOCKING_WARNINGS = frozenset({"sweep_static"})
+# A frame is empty when fewer than this share of its pixels differ from its
+# most common colour.
+EMPTY_FRAME_MIN_CONTENT = 0.004
 
 RECOVERY_REPAIR = "repair"
 RECOVERY_SKIP = "skip"
@@ -169,10 +190,24 @@ def max_attempts(settings: Mapping[str, Any] | None = None) -> int:
 
 
 def planning_enabled(settings: Mapping[str, Any] | None = None) -> bool:
-    value = _settings(settings).get("claude_animation_plan", True)
+    return _flag(_settings(settings), "claude_animation_plan")
+
+
+def _flag(settings: Mapping[str, Any], key: str) -> bool:
+    value = settings.get(key, True)
     if isinstance(value, str):
         return value.strip().lower() not in ("", "0", "false", "no", "off")
     return bool(value)
+
+
+def follow_narration_enabled(settings: Mapping[str, Any] | None = None) -> bool:
+    """Cut scenes to the voiceover's subtitle timings (on unless switched off)."""
+    return _flag(_settings(settings), "claude_animation_follow_narration")
+
+
+def review_enabled(settings: Mapping[str, Any] | None = None) -> bool:
+    """Review each scene's frames before accepting it (on unless switched off)."""
+    return _flag(_settings(settings), "claude_animation_review")
 
 
 def style_preset(settings: Mapping[str, Any] | None = None) -> AnimationStyle | None:
@@ -189,7 +224,100 @@ class PlannedScene:
 @dataclass(frozen=True)
 class ScenePlan:
     look: str
-    scenes: tuple[PlannedScene, ...]
+    # One entry per scene in order; ``None`` where the planner gave no idea.
+    scenes: tuple[PlannedScene | None, ...]
+
+
+@dataclass(frozen=True)
+class TimedScene:
+    """One scene's place under the voiceover."""
+
+    start: float
+    duration: float
+    narration: str
+
+
+def _seconds(value: float) -> str:
+    return f"{value:g}"
+
+
+def scene_timings(
+    cues: Sequence[tuple[float, float, str]],
+    *,
+    total_duration: float,
+    target_duration: float,
+) -> tuple[TimedScene, ...]:
+    """Group subtitle cues into scenes that change when the speaker moves on.
+
+    ``cues`` are ``(start, end, text)`` in seconds. A scene starts when its first
+    cue starts and runs until the next scene's first cue, so pauses belong to the
+    scene before them. A scene is closed at the cue boundary nearest to
+    ``target_duration``. The first scene starts at 0 and the last one ends just
+    after ``total_duration``. Returns ``()`` when the cues are unusable.
+    """
+    ordered = [
+        (float(start), float(end), " ".join(str(text).split()))
+        for start, end, text in cues
+        if math.isfinite(float(start)) and math.isfinite(float(end)) and float(end) > float(start)
+    ]
+    if not ordered or not target_duration > 0:
+        return ()
+    ordered.sort(key=lambda cue: cue[0])
+    end_of_video = max(float(total_duration or 0), ordered[-1][1]) + SCENE_TAIL_SECONDS
+
+    # Each group is [start, [texts]]; a group's end is the next group's start.
+    groups: list[list[Any]] = [[0.0, []]]
+    for index, (start, _end, text) in enumerate(ordered):
+        group = groups[-1]
+        next_start = ordered[index + 1][0] if index + 1 < len(ordered) else end_of_video
+        length_without = start - group[0]
+        length_with = next_start - group[0]
+        # Close the scene before this cue when stopping here lands nearer the
+        # target than taking the cue too.
+        if (
+            group[1]
+            and length_without >= MIN_SCENE_SECONDS
+            and length_with > target_duration
+            and target_duration - length_without < length_with - target_duration
+        ):
+            group = [start, []]
+            groups.append(group)
+        group[1].append(text)
+    if len(groups) > 1 and end_of_video - groups[-1][0] < MIN_SCENE_SECONDS:
+        tail = groups.pop()
+        groups[-1][1].extend(tail[1])
+
+    # Round the cut points, not the lengths, so rounding never accumulates.
+    cuts = [round(group[0] / SCENE_TIME_STEP) for group in groups]
+    cuts.append(math.ceil(end_of_video / SCENE_TIME_STEP))
+    return tuple(
+        TimedScene(
+            start=round(cuts[index] * SCENE_TIME_STEP, 1),
+            duration=round((cuts[index + 1] - cuts[index]) * SCENE_TIME_STEP, 1),
+            narration=" ".join(group[1])[:MAX_NARRATION_LENGTH],
+        )
+        for index, group in enumerate(groups)
+    )
+
+
+def _srt_seconds(value: str) -> float:
+    hours, minutes, seconds = value.strip().replace(",", ".").split(":")
+    return int(hours) * 3600 + int(minutes) * 60 + float(seconds)
+
+
+def read_scene_timings(
+    subtitle_path: str, *, total_duration: float, target_duration: float
+) -> tuple[TimedScene, ...]:
+    """Scene timings from an SRT file; ``()`` when it is missing or unreadable."""
+    cues = []
+    try:
+        for _index, times, text in subtitle_reader.file_to_subtitles(subtitle_path):
+            start, _arrow, end = times.partition("-->")
+            cues.append((_srt_seconds(start), _srt_seconds(end), text))
+    except (OSError, ValueError) as exc:
+        logger.warning(f"claude animation could not read subtitle timings: {exc}")
+        return ()
+    return scene_timings(cues, total_duration=total_duration, target_duration=target_duration)
 
 
 def _style_lines(preset: AnimationStyle | None, notes: str, *, with_example: bool) -> list[str]:
@@ -216,26 +344,50 @@ def build_plan_prompt(
     subject: str = "",
     preset: AnimationStyle | None = None,
     style: str = "",
+    timings: Sequence[TimedScene] = (),
 ) -> str:
+    """``timings`` fixes each scene's narration and length; without it the planner splits the script."""
     lines = [
         f"Plan a {width}x{height} animated video of exactly {scene_count} scenes, "
-        f"{duration} seconds each, played in order under this narration.",
+        + ("" if timings else f"{_seconds(duration)} seconds each, ")
+        + "played in order under this narration.",
     ]
     if subject:
         lines.append(f"Video topic: {subject}")
     lines.append("Narration:\n" + script[:MAX_PLAN_SCRIPT_LENGTH])
     lines += _style_lines(preset, style, with_example=False)
+    if timings:
+        lines.append(
+            "The narration is already cut into scenes. Each scene plays under these words:\n"
+            + "\n".join(
+                f"Scene {number} ({_seconds(timed.duration)} s): {timed.narration}"
+                for number, timed in enumerate(timings[:scene_count], start=1)
+            )
+        )
+        task = (
+            f"Decide what each of the {scene_count} scenes shows. A short scene needs a "
+            "simple idea; a long one can build in steps."
+        )
+        entry = '{"idea": "what is on screen and how it moves, in one or two sentences"}'
+    else:
+        task = (
+            f"Split the narration into {scene_count} consecutive parts of similar length, "
+            "one per scene, and decide what each scene shows."
+        )
+        entry = (
+            '{"narration": "the part of the narration this scene plays under", '
+            '"idea": "what is on screen and how it moves, in one or two sentences"}'
+        )
     lines.append(
         f"""
-Split the narration into {scene_count} consecutive parts of similar length, one per
-scene, and decide what each scene shows. Scenes are drawn with HTML, CSS and inline
+{task} Scenes are drawn with HTML, CSS and inline
 SVG shapes and a few large words: no photos, no footage, no realistic people.
 
 Output one JSON object and nothing else:
 {{
   "look": "at most 80 words every scene must follow: background, 3-5 colours as hex, typeface, shape language, how things move",
   "scenes": [
-    {{"narration": "the part of the narration this scene plays under", "idea": "what is on screen and how it moves, in one or two sentences"}}
+    {entry}
   ]
 }}
 
@@ -261,18 +413,20 @@ def parse_plan(reply: str, scene_count: int) -> ScenePlan:
     entries = payload.get("scenes") if isinstance(payload, dict) else None
     if not isinstance(entries, list):
         raise _SceneFailure("plan", 'JSON has no "scenes" list')
-    scenes = []
+    scenes: list[PlannedScene | None] = []
     for entry in entries[:scene_count]:
         idea = str(entry.get("idea") or "").strip() if isinstance(entry, dict) else ""
-        if not idea:
-            continue
+        # An entry without an idea keeps its place, so later scenes stay under
+        # their own part of the narration.
         scenes.append(
             PlannedScene(
                 idea=idea[:MAX_IDEA_LENGTH],
                 narration=str(entry.get("narration") or "").strip()[:MAX_NARRATION_LENGTH],
             )
+            if idea
+            else None
         )
-    if not scenes:
+    if not any(scenes):
         raise _SceneFailure("plan", "the plan has no usable scenes")
     return ScenePlan(look=str(payload.get("look") or "").strip()[:MAX_LOOK_LENGTH], scenes=tuple(scenes))
 
@@ -284,13 +438,15 @@ def plan_scenes(
     duration: int,
     video_aspect: VideoAspect,
     subject: str = "",
+    timings: Sequence[TimedScene] = (),
     settings: Mapping[str, Any] | None = None,
 ) -> ScenePlan | None:
     """Plan the whole video in one request.
 
     Returns ``None`` when planning is off, there is no script, or the plan is
     unusable; the caller then falls back to one scene per keyword. A plan may
-    hold fewer scenes than asked for.
+    hold fewer scenes than asked for, and ``None`` for a scene it has no idea
+    for. With ``timings``, each scene's narration is the timed one.
     """
     source = _settings(settings)
     script = (script or "").strip()
@@ -299,9 +455,10 @@ def plan_scenes(
         return None
     width, height = VideoAspect(video_aspect).to_resolution()
     prompt = build_plan_prompt(
-        script=script, scene_count=scene_count, duration=int(duration),
+        script=script, scene_count=scene_count, duration=duration,
         width=width, height=height, subject=subject,
         preset=style_preset(source), style=_text(source, "claude_animation_style"),
+        timings=timings,
     )
     try:
         plan = parse_plan(_ask_claude(prompt, source, system_prompt=PLAN_SYSTEM_PROMPT), scene_count)
@@ -311,7 +468,20 @@ def plan_scenes(
             f"{failure.detail[:MAX_ERROR_TEXT_LENGTH]}"
         )
         return None
-    logger.info(f"claude animation plan: {len(plan.scenes)}/{scene_count} scenes, look={plan.look!r}")
+    if timings:
+        plan = ScenePlan(
+            look=plan.look,
+            scenes=tuple(
+                PlannedScene(idea=scene.idea, narration=timings[index].narration)
+                if scene is not None and index < len(timings)
+                else scene
+                for index, scene in enumerate(plan.scenes)
+            ),
+        )
+    logger.info(
+        f"claude animation plan: {sum(scene is not None for scene in plan.scenes)}/{scene_count} "
+        f"scenes, look={plan.look!r}"
+    )
     return plan
 
 
@@ -320,7 +490,9 @@ def decide_recovery(stage: str, attempt: int, attempts_allowed: int, detail: str
 
     ``stage`` is where it failed: ``author`` (Claude's reply was unusable),
     ``validate`` (the scene used a forbidden construct), ``check`` (HyperFrames
-    lint errors) or ``render``. ``attempt`` counts from 1.
+    lint errors), ``review`` (its frames show a defect: clipped or unreadable
+    text, text under the subtitles, nothing moving, an empty frame) or
+    ``render``. ``attempt`` counts from 1.
 
     Return ``RECOVERY_REPAIR`` to ask Claude again with ``detail`` as feedback,
     ``RECOVERY_SKIP`` to drop this scene and move to the next one, or
@@ -336,7 +508,7 @@ def decide_recovery(stage: str, attempt: int, attempts_allowed: int, detail: str
 def build_prompt(
     *,
     scene: str,
-    duration: int,
+    duration: float,
     width: int,
     height: int,
     subject: str = "",
@@ -350,7 +522,7 @@ def build_prompt(
     feedback: str = "",
 ) -> str:
     lines = [
-        f"Write one animated scene for a {width}x{height} video, exactly {duration} seconds long.",
+        f"Write one animated scene for a {width}x{height} video, exactly {_seconds(duration)} seconds long.",
         f"Scene idea: {scene}",
     ]
     if position:
@@ -386,12 +558,12 @@ and is registered for you.
 
 Rules:
 - Every top-level element has a unique id, class="clip", data-start="0",
-  data-duration="{duration}" and data-track-index (0, 1, 2...). Position them with
+  data-duration="{_seconds(duration)}" and data-track-index (0, 1, 2...). Position them with
   CSS (position: absolute).
 - Animate children of the .clip elements with tl.fromTo(selector, from, to, time).
   Never tween a .clip element itself, never use tl.from, and never set a CSS
   transform on an element GSAP transforms.
-- Keep something moving across the whole {duration} seconds; finish every tween
+- Keep something moving across the whole {_seconds(duration)} seconds; finish every tween
   before {duration - 0.1:.1f}s.
 - Draw with HTML, CSS and inline SVG only: no images, video, audio, remote URLs,
   extra scripts, timers, Math.random, Date or infinite repeats.
@@ -399,6 +571,7 @@ Rules:
   JetBrains Mono.
 - On-screen text is at most a few large words. Keep everything inside the middle
   90% of the frame and keep the bottom 22% free of text: subtitles go there.
+  Text must fit inside its box and contrast clearly with what is behind it.
 - Fill the frame with a designed background; do not leave it black.
 
 Output exactly three fenced blocks and nothing else:
@@ -440,7 +613,8 @@ def parse_scene(reply: str) -> dict[str, str]:
     return blocks
 
 
-def build_document(blocks: Mapping[str, str], *, duration: int, width: int, height: int) -> str:
+def build_document(blocks: Mapping[str, str], *, duration: float, width: int, height: int) -> str:
+    duration = _seconds(duration)
     return f"""<!doctype html>
 <html lang="en">
   <head>
@@ -575,6 +749,88 @@ def _lint_errors(project_dir: str, settings: Mapping[str, Any], timeout: float) 
     return "\n".join(errors)
 
 
+def _review_errors(project_dir: str, duration: float, settings: Mapping[str, Any], timeout: float) -> str:
+    """Defects ``hyperframes check`` sees in sampled frames, one per line.
+
+    The check lays the scene out in a browser at several moments and reports
+    text that overflows its box or the frame, text that sits where the subtitles
+    go, text too close in colour to what is behind it, and a scene where nothing
+    moves. Lint findings are left to ``_lint_errors``.
+    """
+    completed = _run_hyperframes(
+        ["check", "--json", "--samples", str(REVIEW_SAMPLES),
+         "--caption-zone", f"x0=0;y0={CAPTION_BAND_TOP};x1=1;y1=1;severity=error"],
+        project_dir, settings, timeout,
+    )
+    try:
+        report = json.loads(completed.stdout or "")
+    except json.JSONDecodeError:
+        # No report is not proof of a bad scene; the render still has to succeed.
+        return ""
+    if not isinstance(report, dict) or report.get("browserSkipped"):
+        return ""
+    errors = []
+    for section in ("runtime", "layout", "contrast"):
+        audit = report.get(section)
+        for item in (audit.get("findings") if isinstance(audit, dict) else None) or []:
+            if not isinstance(item, dict):
+                continue
+            code = str(item.get("code") or "")
+            if item.get("severity") != "error" and code not in _REVIEW_BLOCKING_WARNINGS:
+                continue
+            where = " ".join(
+                part for part in (
+                    str(item.get("selector") or ""),
+                    f'"{str(item.get("text"))[:60]}"' if item.get("text") else "",
+                    f"at {_seconds(float(item['time']))}s" if isinstance(item.get("time"), (int, float)) else "",
+                ) if part
+            )
+            # The hints end by offering an attribute that silences the finding;
+            # the scene has to be fixed, not excused.
+            fix = str(item.get("fixHint") or "").split(", or mark intentional")[0]
+            if not fix and item.get("suggestedColor"):
+                fix = f"use {item['suggestedColor']} or a colour at least that far from the background"
+            if code == "sweep_static":
+                fix = f"keep visible motion going across the whole {_seconds(duration)} seconds"
+            errors.append(
+                f"{code}: {item.get('message')}" + (f" ({where})" if where else "")
+                + (f" Fix: {fix}" if fix else "")
+            )
+    return "\n".join(dict.fromkeys(errors))
+
+
+def _empty_frame_error(video_path: str, duration: float) -> str:
+    """Say so when the middle of the rendered clip is one flat colour."""
+    try:
+        import numpy as np
+        from moviepy import VideoFileClip
+
+        clip = VideoFileClip(video_path, audio=False)
+        try:
+            frame = np.asarray(clip.get_frame(min(duration, float(clip.duration)) / 2))
+        finally:
+            clip.close()
+    except Exception as exc:
+        # A clip this test cannot read is judged by the later video stages.
+        logger.debug(f"claude animation frame test skipped: {exc}")
+        return ""
+    # A coarse grid is enough to tell a drawn frame from a flat one.
+    pixels = frame[::8, ::8, :3].reshape(-1, 3).astype(np.int16)
+    if not len(pixels):
+        return ""
+    colours, counts = np.unique(pixels // 16, axis=0, return_counts=True)
+    background = colours[counts.argmax()] * 16 + 8
+    content = float((np.abs(pixels - background).max(axis=1) > 24).mean())
+    if content >= EMPTY_FRAME_MIN_CONTENT:
+        return ""
+    return (
+        f"empty_frame: halfway through, {content:.1%} of the frame differs from the "
+        "background, so the viewer sees a blank screen. Fix: make sure the shapes and "
+        "words are inside the frame, large, visible (opacity 1 by mid-scene) and not "
+        "the same colour as the background."
+    )
+
+
 def _render(project_dir: str, output_path: str, settings: Mapping[str, Any], timeout: float) -> None:
     completed = _run_hyperframes(
         ["render", "--quality", quality(settings), "--fps", str(FPS), "--quiet",
@@ -591,7 +847,7 @@ def _render(project_dir: str, output_path: str, settings: Mapping[str, Any], tim
 def generate_video(
     *,
     search_term: str,
-    duration: int,
+    duration: float,
     video_aspect: VideoAspect,
     output_dir: str,
     subject: str = "",
@@ -606,12 +862,19 @@ def generate_video(
 
     ``search_term`` is the scene idea: a planned idea or a bare keyword.
     ``look``, ``narration`` and ``position`` come from ``plan_scenes``.
+    ``duration`` is in seconds and is rounded to a tenth.
     """
     source = _settings(settings)
     preset = style_preset(source)
-    duration = int(duration)
-    if duration <= 0:
-        raise ClaudeAnimationError("Claude animation clip duration must be a positive integer")
+    try:
+        duration = round(float(duration), 1)
+    except (TypeError, ValueError, OverflowError):
+        duration = 0.0
+    if not math.isfinite(duration) or duration <= 0:
+        raise ClaudeAnimationError("Claude animation clip duration must be a positive number")
+    if duration == int(duration):
+        duration = int(duration)
+    review = review_enabled(source)
     width, height = VideoAspect(video_aspect).to_resolution()
     render_timeout = _bounded_float(
         source, "claude_animation_render_timeout", DEFAULT_RENDER_TIMEOUT_SECONDS, 30, 3600
@@ -642,7 +905,15 @@ def generate_video(
                 lint_errors = _lint_errors(project_dir, source, render_timeout)
                 if lint_errors:
                     raise _SceneFailure("check", lint_errors)
+                # Reviewed before the render: the check takes seconds, a render
+                # of a scene that will be rejected takes much longer.
+                review_errors = _review_errors(project_dir, duration, source, render_timeout) if review else ""
+                if review_errors:
+                    raise _SceneFailure("review", review_errors)
                 _render(project_dir, output_path, source, render_timeout)
+            empty_frame = _empty_frame_error(output_path, duration) if review else ""
+            if empty_frame:
+                raise _SceneFailure("review", empty_frame)
         except _SceneFailure as failure:
             logger.warning(
                 f"claude animation scene failed: term={search_term!r}, stage={failure.stage}, "
@@ -654,6 +925,9 @@ def generate_video(
                     f"Claude animation failed at {failure.stage}: "
                     f"{failure.detail[:MAX_ERROR_TEXT_LENGTH]}"
                 ) from None
+            # A clip that was rendered and then rejected must not be left behind.
+            if os.path.isfile(output_path):
+                os.remove(output_path)
             if action == RECOVERY_REPAIR and attempt < attempts_allowed:
                 feedback = f"[{failure.stage}] {failure.detail}"
                 continue
@@ -661,10 +935,12 @@ def generate_video(
         return MaterialInfo(
             provider=PROVIDER_ID,
             url=output_path,
-            duration=duration,
+            # MaterialInfo counts whole seconds; the exact length is kept beside it.
+            duration=math.ceil(duration),
             source_info={
                 "provider": PROVIDER_ID,
                 "search_term": search_term,
+                "seconds": duration,
                 "style": preset.slug if preset else "",
                 "rendition": {"width": width, "height": height},
             },

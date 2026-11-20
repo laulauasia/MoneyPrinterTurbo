@@ -118,3 +118,15 @@ def test_random_mode_still_plays_every_slice_once_before_it_loops(combine):
     )
     assert sorted(encoded) == [("a.mp4", 0, 3), ("a.mp4", 3, 6), ("a.mp4", 6, 9)]
     assert joined == encoded * 2 + encoded[:1]
+
+
+def test_whole_clips_play_once_each_in_order_at_full_length(combine):
+    # Clips made to measure for the narration are not cut to max_clip_duration
+    # (3 here) and are not shuffled, whatever concat mode was asked for.
+    encoded, joined = combine(
+        {"a.mp4": 4.2, "b.mp4": 7.5, "c.mp4": 2.4}, audio_duration=14,
+        mode=VideoConcatMode.random, keep_clips_whole=True,
+    )
+    expected = [("a.mp4", 0, 4.2), ("b.mp4", 0, 7.5), ("c.mp4", 0, 2.4)]
+    assert encoded == expected
+    assert joined == expected

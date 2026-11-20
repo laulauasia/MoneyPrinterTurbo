@@ -748,6 +748,7 @@ def get_video_materials(
     jalapeno_video_endpoint: volcengine_seedance.SeedanceEndpoint | None = None,
     codex_image_context: codex_image.CodexImageContext | None = None,
     animation_script: str = "",
+    animation_subtitle_path: str = "",
 ):
     if params.video_source == "local":
         logger.info("\n\n## preprocess local materials")
@@ -841,6 +842,13 @@ def get_video_materials(
             generation_options["animation_context"] = {
                 "subject": str(params.video_subject or ""),
                 "script": str(animation_script or params.video_script or ""),
+                # Scene lengths follow these timings when the clips will be
+                # played whole and in order.
+                "subtitle_path": (
+                    str(animation_subtitle_path or "")
+                    if _animation_follows_narration(params)
+                    else ""
+                ),
             }
         # 顺序匹配模式只在用户显式开启时生效。这里强制素材下载按关键词顺序
         # 轮询，避免某个早期关键词下载太多素材，把后续脚本主题挤出最终时间线。
@@ -1054,6 +1062,21 @@ def _get_material_source_groups(task_id: str, video_paths: list[str]) -> dict[st
         return {}
 
 
+def _animation_follows_narration(params) -> bool:
+    """Whether Claude animation scenes play whole, in order, under the voiceover.
+
+    Only for a single video at normal speed: several videos from one task are
+    different cuts of the same clips, and a speed change stretches every clip
+    away from the narration it was timed to.
+    """
+    return (
+        params.video_source == claude_animation.PROVIDER_ID
+        and params.video_count == 1
+        and utils.normalize_clip_speed(params.video_clip_speed) == 1.0
+        and claude_animation.follow_narration_enabled()
+    )
+
+
 def generate_final_videos(
     task_id, params, downloaded_videos, audio_file, subtitle_path, audio_duration,
     *, partial_results: dict | None = None,
@@ -1129,6 +1152,7 @@ def generate_final_videos(
             progress_callback=_stage_progress_reporter(
                 task_id, _progress, _progress + combine_share
             ),
+            keep_clips_whole=_animation_follows_narration(params),
             **batch_options,
         )
         if allocate_batch_materials:
@@ -1953,7 +1977,8 @@ def _run_pipeline(
            if codex_image_context is not None else {}),
         **({"jalapeno_video_endpoint": jalapeno_video_endpoint}
            if jalapeno_video_endpoint is not None else {}),
-        **({"animation_script": video_script}
+        **({"animation_script": video_script,
+            "animation_subtitle_path": subtitle_path or ""}
            if params.video_source == claude_animation.PROVIDER_ID else {}),
     )
     # Paid clips are billed even when a later clip fails, so the usage block

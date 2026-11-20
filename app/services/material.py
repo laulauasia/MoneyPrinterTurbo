@@ -3746,9 +3746,24 @@ def _generate_videos_claude_animation(
         _persist_material_sources(task_id, sources)
         return paths
 
-    clips_needed = math.ceil(required / clip_duration)
     subject = str(context.get("subject") or "")
     script = str(context.get("script") or "")
+    # With subtitle timings each scene lasts as long as the lines spoken over
+    # it; without them every scene has the configured clip length.
+    subtitle_path = str(context.get("subtitle_path") or "")
+    timings = (
+        claude_animation.read_scene_timings(
+            subtitle_path, total_duration=required, target_duration=clip_duration
+        )
+        if subtitle_path
+        else ()
+    )
+    clips_needed = len(timings) or math.ceil(required / clip_duration)
+    if timings:
+        logger.info(
+            f"claude animation scenes follow the narration: {len(timings)} scenes, "
+            f"lengths={[scene.duration for scene in timings]}"
+        )
     # A script usually has fewer keywords than the voiceover needs clips, so the
     # keywords are reused in order. Skipped scenes get a bounded number of extra
     # tries; without the cap a prompt that never renders would loop forever.
@@ -3759,22 +3774,28 @@ def _generate_videos_claude_animation(
         # Without a usable plan every clip falls back to a script keyword.
         plan = claude_animation.plan_scenes(
             script=script, scene_count=clips_needed, duration=clip_duration,
-            video_aspect=video_aspect, subject=subject,
+            video_aspect=video_aspect, subject=subject, timings=timings,
         )
         planned = plan.scenes if plan else ()
         look = plan.look if plan else ""
+        # Seconds of narration left uncovered by scenes that were skipped. The
+        # next scene plays that much longer, so later scenes stay in step.
+        carried = 0.0
         for slot in range(clips_needed):
             scene = planned[slot] if slot < len(planned) else None
+            timed = timings[slot] if timings else None
+            slot_duration = round(timed.duration + carried, 1) if timed else clip_duration
             while True:
                 if scene is not None:
                     idea, narration, variation = scene.idea, scene.narration, 0
                 else:
                     idea = terms[keyword_index % len(terms)]
-                    narration, variation = "", keyword_index // len(terms)
+                    narration = timed.narration if timed else ""
+                    variation = keyword_index // len(terms)
                     keyword_index += 1
                 item = claude_animation.generate_video(
                     search_term=idea,
-                    duration=clip_duration,
+                    duration=slot_duration,
                     video_aspect=video_aspect,
                     output_dir=utils.task_dir(task_id),
                     subject=subject,
@@ -3791,7 +3812,9 @@ def _generate_videos_claude_animation(
                 retries_left -= 1
                 scene = None
             if item is None:
+                carried = slot_duration if timed else 0.0
                 continue
+            carried = 0.0
             paths.append(item.url)
             sources.append(_material_source_record(item, item.url))
             logger.info(

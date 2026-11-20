@@ -185,6 +185,16 @@ claude_animation_style = ""
 # shared look and one scene idea per clip, so scenes follow the narration and
 # match each other. false = one scene per script keyword.
 claude_animation_plan = true
+# Cut scenes to the voiceover: each scene lasts as long as the subtitle lines
+# spoken over it (about one clip duration each) and the clips play whole and in
+# order. Applies to a single video at clip speed 1.0 with subtitles on; otherwise,
+# or when false, every scene has the fixed clip duration.
+claude_animation_follow_narration = true
+# Review each scene before accepting it: HyperFrames checks sampled frames for
+# text that is cut off, unreadable or under the subtitles and for scenes where
+# nothing moves, and the rendered clip is tested for an empty frame. A rejected
+# scene goes back to Claude with the findings. Adds a few seconds per scene.
+claude_animation_review = true
 # draft (fastest), looks or delivery.
 claude_animation_quality = "draft"
 # Attempts per scene, including the first one (1-4).

@@ -203,6 +203,15 @@ claude_animation_concurrency = 2
 # concrete and filmable, and those use a stock clip; the rest stay animated.
 # A scene that cannot be animated also falls back to footage. Empty = animation only.
 claude_animation_footage_source = ""
+# Keep accepted plans and scenes in storage/animation_cache and reuse them when
+# the same script, voice timing, style and model come up again. Making a video
+# a second time then needs no Claude requests and no renders. Set to false to
+# get new scenes every time.
+claude_animation_cache = true
+# Each Claude request's tokens and list price (what they would cost on the API)
+# are stored with the task. A subscription is not charged per request, so the
+# list price is not added to the task's cost unless this is true.
+claude_animation_bill_usage = false
 # draft (fastest), looks or delivery.
 claude_animation_quality = "draft"
 # Attempts per scene, including the first one (1-4).

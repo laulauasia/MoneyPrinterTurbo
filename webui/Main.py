@@ -3875,6 +3875,24 @@ def _render_material_provider_settings(provider):
         _set_runtime_config(
             "app", "claude_animation_footage_source", claude_animation_footage
         )
+        saved_animation_cache = claude_animation.cache_enabled(app_settings)
+        claude_animation_cache = st.checkbox(
+            tr("Claude Code Animation Cache"),
+            value=saved_animation_cache,
+            key="claude_animation_cache_checkbox",
+            help=tr("Claude Code Animation Cache Help"),
+            on_change=_save_settings_change,
+            args=(
+                "app",
+                "claude_animation_cache",
+                "claude_animation_cache_checkbox",
+                lambda value: value,
+            ),
+        )
+        if claude_animation_cache != saved_animation_cache:
+            _set_runtime_config(
+                "app", "claude_animation_cache", claude_animation_cache
+            )
         claude_animation_style = st.text_area(
             tr("Claude Code Animation Style"),
             value=str(app_settings.get("claude_animation_style", "") or ""),

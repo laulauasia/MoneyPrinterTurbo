@@ -127,6 +127,8 @@
     "Claude Code Animation Footage": "Mix In Stock Footage",
     "Claude Code Animation Footage None": "Animation only",
     "Claude Code Animation Footage Help": "Scenes that show something concrete and filmable use a stock clip from this source; the rest stay animated. Needs the source's API key.",
+    "Claude Code Animation Cache": "Reuse Earlier Scenes",
+    "Claude Code Animation Cache Help": "Keeps finished scenes and reuses them when the same script, voice timing and style come up again, so a repeat costs no Claude usage. Untick to get new scenes every time.",
     "Claude Code Animation Quality": "Render Quality",
     "Claude Code Animation Quality Help": "draft is fastest; looks and delivery are sharper but slower.",
     "Task Actions": "Actions",

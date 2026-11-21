@@ -3996,7 +3996,18 @@ def _generate_videos_claude_animation(
         raise claude_animation.ClaudeAnimationError(
             "Claude animation produced no clips; see the log for each scene's failure"
         )
-    logger.success(f"prepared {len(paths)} Claude animation clips")
+    reused = sum(bool((item.source_info or {}).get("cached")) for item, _idea in results.values())
+    usage = claude_animation.usage_totals()
+    logger.success(
+        f"prepared {len(paths)} Claude animation clips, {reused} reused from cache; "
+        + (
+            f"claude requests={usage['requests']}, "
+            f"tokens={usage['prompt_tokens']}+{usage['completion_tokens']}, "
+            f"list_price_usd={usage['list_price_usd']}"
+            if usage
+            else "no claude requests"
+        )
+    )
     return paths
 
 

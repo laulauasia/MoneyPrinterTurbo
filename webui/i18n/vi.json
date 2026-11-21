@@ -122,6 +122,8 @@
     "Claude Code Animation Footage": "Trộn video stock",
     "Claude Code Animation Footage None": "Chỉ hoạt hình",
     "Claude Code Animation Footage Help": "Cảnh thể hiện thứ cụ thể, quay được sẽ dùng clip stock từ nguồn này; các cảnh còn lại vẫn là hoạt hình. Cần khóa API của nguồn.",
+    "Claude Code Animation Cache": "Dùng lại cảnh đã tạo",
+    "Claude Code Animation Cache Help": "Lưu các cảnh đã hoàn thành và dùng lại khi kịch bản, thời gian giọng đọc và phong cách giống nhau, nên làm lại không tốn lượt dùng Claude. Bỏ chọn để nhận cảnh mới mỗi lần.",
     "Claude Code Animation Quality": "Chất lượng dựng hình",
     "Claude Code Animation Quality Help": "draft nhanh nhất; looks và delivery sắc nét hơn nhưng chậm hơn.",
     "Task Actions": "Thao tác",

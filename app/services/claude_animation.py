@@ -18,10 +18,16 @@ Scenes are independent once the plan exists, so the caller writes several at
 once (``concurrency``). With a stock footage source configured
 (``footage_source``), the planner may mark a scene that shows something
 filmable; the caller then uses a stock clip there instead of an animation.
+
+Accepted plans and scenes are kept in ``storage/animation_cache`` and reused
+when the same request comes up again, so making a video a second time costs no
+Claude requests and no renders. Scenes load GSAP from a local copy, so a render
+needs no network. Every Claude request's token counts go to ``llm_usage``.
 """
 
 from __future__ import annotations
 
+import hashlib
 import json
 import math
 import os
@@ -29,6 +35,9 @@ import re
 import shutil
 import subprocess
 import tempfile
+import threading
+import time
+import urllib.request
 import uuid
 from collections.abc import Mapping, Sequence
 from dataclasses import dataclass
@@ -39,14 +48,27 @@ from loguru import logger
 
 from app.config import config
 from app.models.schema import MaterialInfo, VideoAspect
-from app.services import animation_styles, llm
+from app.services import animation_styles, llm, llm_usage
 from app.services.animation_styles import AnimationStyle
-from app.utils import subtitle_reader
+from app.utils import subtitle_reader, utils
 
 PROVIDER_ID = "claude_animation"
 # Pinned so a rebuilt image or a cold npx cache cannot change render behaviour.
 HYPERFRAMES_VERSION = "0.9.13"
-GSAP_URL = "https://cdn.jsdelivr.net/npm/gsap@3.15.0/dist/gsap.min.js"
+GSAP_VERSION = "3.15.0"
+GSAP_URL = f"https://cdn.jsdelivr.net/npm/gsap@{GSAP_VERSION}/dist/gsap.min.js"
+# The scene runs whatever this file contains, so a local copy is used only when
+# it is byte for byte the published one.
+GSAP_SHA256 = "92bb9a96476f983d212a2bc4f54c889039c1696dd4461d40a736860938570fbb"
+GSAP_FILE_NAME = "gsap.min.js"
+GSAP_DOWNLOAD_TIMEOUT_SECONDS = 20.0
+# After a failed download the CDN address is used for this long before retrying.
+GSAP_RETRY_SECONDS = 600.0
+# Part of every cache key: raise it when a change here makes old entries wrong.
+CACHE_FORMAT = 1
+# Plans and scenes kept; the least recently used are deleted beyond this.
+MAX_CACHE_ENTRIES = 300
+_CACHE_EXTENSIONS = (".mp4", ".json")
 FPS = 30
 DEFAULT_AUTHOR_TIMEOUT_SECONDS = 300.0
 DEFAULT_RENDER_TIMEOUT_SECONDS = 600.0
@@ -230,6 +252,143 @@ def footage_source(settings: Mapping[str, Any] | None = None) -> str:
     """The stock source for scenes better shown as footage, or ``""`` for animation only."""
     source = _text(_settings(settings), "claude_animation_footage_source").lower()
     return source if source in FOOTAGE_SOURCES else ""
+
+
+def cache_enabled(settings: Mapping[str, Any] | None = None) -> bool:
+    """Reuse plans and scenes made earlier for the same request (on unless switched off)."""
+    return _flag(_settings(settings), "claude_animation_cache")
+
+
+def bill_usage_enabled(settings: Mapping[str, Any] | None = None) -> bool:
+    """Count Claude's list price as a task cost. Off by default: a subscription
+    is not charged per request, so the price is recorded but not billed."""
+    value = _settings(settings).get("claude_animation_bill_usage", False)
+    if isinstance(value, str):
+        return value.strip().lower() in ("1", "true", "yes", "on")
+    return bool(value)
+
+
+def _cache_dir() -> str:
+    return utils.storage_dir("animation_cache", create=True)
+
+
+def _cache_key(kind: str, settings: Mapping[str, Any], *parts: Any) -> str:
+    """Name one request. Everything that changes the result must be in ``parts``."""
+    payload = json.dumps(
+        [CACHE_FORMAT, kind, HYPERFRAMES_VERSION, GSAP_VERSION,
+         _text(settings, "claude_animation_model"), *parts],
+        ensure_ascii=False,
+    )
+    return f"{kind}-{hashlib.sha256(payload.encode('utf-8')).hexdigest()[:32]}"
+
+
+def _cached_file(key: str, extension: str) -> str:
+    """The cache entry's path, or ``""`` when there is none."""
+    if not key:
+        return ""
+    try:
+        path = os.path.join(_cache_dir(), key + extension)
+        if os.path.getsize(path) > 0:
+            # Marks the entry as used, so pruning removes it last.
+            os.utime(path)
+            return path
+    except OSError:
+        pass
+    return ""
+
+
+_cache_lock = threading.Lock()
+
+
+def _store_in_cache(key: str, extension: str, *, source_path: str = "", text: str = "") -> None:
+    """Keep a file or a text under ``key``. A cache that cannot be written is only logged."""
+    if not key:
+        return
+    try:
+        directory = _cache_dir()
+        path = os.path.join(directory, key + extension)
+        # Written beside the entry and renamed, so a reader never sees half a file.
+        partial = f"{path}.{uuid.uuid4().hex[:8]}.part"
+        try:
+            if source_path:
+                shutil.copyfile(source_path, partial)
+            else:
+                Path(partial).write_text(text, encoding="utf-8")
+            os.replace(partial, path)
+        finally:
+            if os.path.isfile(partial):
+                os.remove(partial)
+        with _cache_lock:
+            entries = [
+                entry for entry in os.scandir(directory)
+                if entry.is_file() and entry.name.endswith(_CACHE_EXTENSIONS)
+            ]
+            entries.sort(key=lambda entry: entry.stat().st_mtime, reverse=True)
+            for entry in entries[MAX_CACHE_ENTRIES:]:
+                os.remove(entry.path)
+    except OSError as exc:
+        logger.warning(f"claude animation cache could not be written: {exc}")
+
+
+_gsap_lock = threading.Lock()
+_gsap_state = {"path": "", "failed_at": None}
+
+
+def _is_gsap(path: str) -> bool:
+    try:
+        with open(path, "rb") as handle:
+            return hashlib.sha256(handle.read()).hexdigest() == GSAP_SHA256
+    except OSError:
+        return False
+
+
+def _packaged_gsap_path(settings: Mapping[str, Any]) -> str:
+    """The GSAP file an installed HyperFrames package carries, if it is installed."""
+    command = hyperframes_command(settings)
+    if not command:
+        return ""
+    for parent in Path(os.path.realpath(command[0])).parents:
+        if parent.name == "hyperframes":
+            return str(parent / "dist" / "vendor" / "npm" / f"gsap@{GSAP_VERSION}" / "dist" / "gsap.min.js")
+    return ""
+
+
+def gsap_library_path(settings: Mapping[str, Any] | None = None) -> str:
+    """A verified local copy of GSAP, or ``""`` when none can be had.
+
+    Looked for in the cache directory, then in the installed HyperFrames
+    package; downloaded into the cache directory when neither has it.
+    """
+    with _gsap_lock:
+        if _gsap_state["path"] and os.path.isfile(_gsap_state["path"]):
+            return _gsap_state["path"]
+        try:
+            cached = os.path.join(_cache_dir(), f"gsap-{GSAP_VERSION}.min.js")
+        except OSError:
+            cached = ""
+        for candidate in (cached, _packaged_gsap_path(_settings(settings))):
+            if candidate and _is_gsap(candidate):
+                _gsap_state["path"] = candidate
+                return candidate
+        failed_at = _gsap_state["failed_at"]
+        if not cached or (failed_at is not None and time.monotonic() - failed_at < GSAP_RETRY_SECONDS):
+            return ""
+        partial = f"{cached}.{uuid.uuid4().hex[:8]}.part"
+        try:
+            with urllib.request.urlopen(GSAP_URL, timeout=GSAP_DOWNLOAD_TIMEOUT_SECONDS) as response:
+                Path(partial).write_bytes(response.read())
+            if not _is_gsap(partial):
+                raise ValueError("the downloaded file is not the expected GSAP build")
+            os.replace(partial, cached)
+        except (OSError, ValueError) as exc:
+            _gsap_state["failed_at"] = time.monotonic()
+            logger.warning(f"no local GSAP copy, scenes load it from the CDN instead: {exc}")
+            return ""
+        finally:
+            if os.path.isfile(partial):
+                os.remove(partial)
+        _gsap_state["path"] = cached
+        return cached
 
 
 def style_preset(settings: Mapping[str, Any] | None = None) -> AnimationStyle | None:
@@ -499,14 +658,23 @@ def plan_scenes(
         preset=style_preset(source), style=_text(source, "claude_animation_style"),
         timings=timings, footage=bool(footage_source(source)),
     )
+    key = _cache_key("plan", source, PLAN_SYSTEM_PROMPT, prompt) if cache_enabled(source) else ""
+    cached = _cached_file(key, ".json")
     try:
-        plan = parse_plan(_ask_claude(prompt, source, system_prompt=PLAN_SYSTEM_PROMPT), scene_count)
-    except _SceneFailure as failure:
+        if cached:
+            reply = Path(cached).read_text(encoding="utf-8")
+        else:
+            reply = _ask_claude(prompt, source, system_prompt=PLAN_SYSTEM_PROMPT)
+        plan = parse_plan(reply, scene_count)
+    except (_SceneFailure, OSError) as failure:
         logger.warning(
             "claude animation plan failed, using one scene per keyword instead: "
-            f"{failure.detail[:MAX_ERROR_TEXT_LENGTH]}"
+            f"{str(failure)[:MAX_ERROR_TEXT_LENGTH]}"
         )
         return None
+    if not cached:
+        # Only a reply that parsed is kept, so a bad plan is asked for again.
+        _store_in_cache(key, ".json", text=reply)
     if timings:
         plan = ScenePlan(
             look=plan.look,
@@ -527,7 +695,8 @@ def plan_scenes(
             ),
         )
     logger.info(
-        f"claude animation plan: {sum(scene is not None for scene in plan.scenes)}/{scene_count} "
+        f"claude animation plan{' (from cache)' if cached else ''}: "
+        f"{sum(scene is not None for scene in plan.scenes)}/{scene_count} "
         f"scenes, {sum(bool(scene and scene.footage) for scene in plan.scenes)} as footage, "
         f"look={plan.look!r}"
     )
@@ -662,14 +831,17 @@ def parse_scene(reply: str) -> dict[str, str]:
     return blocks
 
 
-def build_document(blocks: Mapping[str, str], *, duration: float, width: int, height: int) -> str:
+def build_document(
+    blocks: Mapping[str, str], *, duration: float, width: int, height: int, gsap_src: str = GSAP_URL
+) -> str:
+    """``gsap_src`` is the CDN address or the name of a copy beside the document."""
     duration = _seconds(duration)
     return f"""<!doctype html>
 <html lang="en">
   <head>
     <meta charset="UTF-8" />
     <meta name="viewport" content="width={width}, height={height}" />
-    <script src="{GSAP_URL}"></script>
+    <script src="{gsap_src}"></script>
     <style>
       * {{ margin: 0; padding: 0; box-sizing: border-box; }}
       html, body {{ margin: 0; width: {width}px; height: {height}px; overflow: hidden; background: #000; }}
@@ -741,6 +913,7 @@ def _ask_claude(prompt: str, settings: Mapping[str, Any], *, system_prompt: str 
                 f"{llm.CLAUDE_CODE_MIN_CLI_VERSION} or newer: {detail}"
             )
         raise _SceneFailure("author", f"claude cli returned no JSON (exit {completed.returncode}): {detail}")
+    _record_usage(payload, settings)
     if payload.get("is_error") or completed.returncode != 0:
         reason = str(payload.get("result") or "").strip() or f"exit code {completed.returncode}"
         lowered = reason.lower()
@@ -754,6 +927,43 @@ def _ask_claude(prompt: str, settings: Mapping[str, Any], *, system_prompt: str 
             raise ClaudeAnimationUnavailableError(f"claude cli: {reason[:MAX_ERROR_TEXT_LENGTH]}")
         raise _SceneFailure("author", f"claude cli error: {reason[:MAX_ERROR_TEXT_LENGTH]}")
     return str(payload.get("result") or "")
+
+
+def _record_usage(payload: Mapping[str, Any], settings: Mapping[str, Any]) -> None:
+    """Add one Claude request's tokens and list price to the task's usage."""
+    usage = payload.get("usage")
+    if not isinstance(usage, dict):
+        return
+
+    def count(key: str) -> int:
+        value = usage.get(key)
+        return int(value) if isinstance(value, (int, float)) and not isinstance(value, bool) and value > 0 else 0
+
+    models = payload.get("modelUsage")
+    model = next(iter(models), "") if isinstance(models, dict) else ""
+    llm_usage.record_subscription_request(
+        "animation", PROVIDER_ID, str(model or _text(settings, "claude_animation_model")),
+        # Cached prompt tokens are input too; the CLI reports them separately.
+        prompt_tokens=count("input_tokens") + count("cache_creation_input_tokens")
+        + count("cache_read_input_tokens"),
+        completion_tokens=count("output_tokens"),
+        list_price_usd=payload.get("total_cost_usd"),
+        billed=bill_usage_enabled(settings),
+    )
+
+
+def usage_totals() -> dict[str, Any] | None:
+    """This task's Claude animation requests added up, or ``None`` when there were none."""
+    summary = llm_usage.summarize()
+    calls = [call for call in (summary or {}).get("calls", []) if call.get("provider") == PROVIDER_ID]
+    if not calls:
+        return None
+    return {
+        "requests": len(calls),
+        "prompt_tokens": sum(call["prompt_tokens"] for call in calls),
+        "completion_tokens": sum(call["completion_tokens"] for call in calls),
+        "list_price_usd": round(sum(call.get("list_price_usd") or 0 for call in calls), 4),
+    }
 
 
 def _hyperframes_env() -> dict[str, str]:
@@ -932,23 +1142,62 @@ def generate_video(
     os.makedirs(output_dir, exist_ok=True)
     output_path = os.path.join(output_dir, f"claude-animation-{uuid.uuid4().hex[:12]}.mp4")
 
+    def prompt_with(feedback: str) -> str:
+        return build_prompt(
+            scene=search_term, duration=duration, width=width, height=height,
+            subject=subject, script=script,
+            style=_text(source, "claude_animation_style"),
+            preset=preset, look=look, narration=narration, position=position,
+            variation=variation, feedback=feedback,
+        )
+
+    def clip(cached: bool) -> MaterialInfo:
+        return MaterialInfo(
+            provider=PROVIDER_ID,
+            url=output_path,
+            # MaterialInfo counts whole seconds; the exact length is kept beside it.
+            duration=math.ceil(duration),
+            source_info={
+                "provider": PROVIDER_ID,
+                "search_term": search_term,
+                "seconds": duration,
+                "style": preset.slug if preset else "",
+                "rendition": {"width": width, "height": height},
+                "cached": cached,
+            },
+        )
+
+    # The first prompt names the request: the same one always asks for the same
+    # scene, whatever repairs it took to get it accepted last time.
+    key = (
+        _cache_key("scene", source, SYSTEM_PROMPT, prompt_with(""), quality(source), FPS, review)
+        if cache_enabled(source)
+        else ""
+    )
+    cached = _cached_file(key, ".mp4")
+    if cached:
+        try:
+            shutil.copyfile(cached, output_path)
+        except OSError as exc:
+            logger.warning(f"claude animation cache entry could not be used: {exc}")
+        else:
+            logger.info(f"claude animation scene reused from cache: term={search_term!r}")
+            return clip(True)
+
+    gsap_path = gsap_library_path(source)
     feedback = ""
     for attempt in range(1, attempts_allowed + 1):
         try:
-            reply = _ask_claude(
-                build_prompt(
-                    scene=search_term, duration=duration, width=width, height=height,
-                    subject=subject, script=script,
-                    style=_text(source, "claude_animation_style"),
-                    preset=preset, look=look, narration=narration, position=position,
-                    variation=variation, feedback=feedback,
-                ),
-                source,
-            )
+            reply = _ask_claude(prompt_with(feedback), source)
             blocks = parse_scene(reply)
             with tempfile.TemporaryDirectory(prefix="mpt-animation-") as project_dir:
+                if gsap_path:
+                    shutil.copyfile(gsap_path, os.path.join(project_dir, GSAP_FILE_NAME))
                 Path(project_dir, "index.html").write_text(
-                    build_document(blocks, duration=duration, width=width, height=height),
+                    build_document(
+                        blocks, duration=duration, width=width, height=height,
+                        gsap_src=GSAP_FILE_NAME if gsap_path else GSAP_URL,
+                    ),
                     encoding="utf-8",
                 )
                 lint_errors = _lint_errors(project_dir, source, render_timeout)
@@ -981,17 +1230,6 @@ def generate_video(
                 feedback = f"[{failure.stage}] {failure.detail}"
                 continue
             return None
-        return MaterialInfo(
-            provider=PROVIDER_ID,
-            url=output_path,
-            # MaterialInfo counts whole seconds; the exact length is kept beside it.
-            duration=math.ceil(duration),
-            source_info={
-                "provider": PROVIDER_ID,
-                "search_term": search_term,
-                "seconds": duration,
-                "style": preset.slug if preset else "",
-                "rendition": {"width": width, "height": height},
-            },
-        )
+        _store_in_cache(key, ".mp4", source_path=output_path)
+        return clip(False)
     return None

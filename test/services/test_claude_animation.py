@@ -1,3 +1,4 @@
+import hashlib
 import json
 import os
 import subprocess
@@ -6,7 +7,7 @@ import unittest
 from unittest.mock import patch
 
 from app.models.schema import VideoAspect
-from app.services import animation_styles, claude_animation, material
+from app.services import animation_styles, claude_animation, llm_usage, material
 
 GOOD_REPLY = """```css
 #s-bg { position: absolute; inset: 0; background: #123; }
@@ -25,8 +26,17 @@ def _completed(stdout="", returncode=0, stderr=""):
     return subprocess.CompletedProcess(args=[], returncode=returncode, stdout=stdout, stderr=stderr)
 
 
-def _claude_reply(text, is_error=False):
-    return _completed(json.dumps({"result": text, "is_error": is_error}))
+def _claude_reply(text, is_error=False, **extra):
+    return _completed(json.dumps({"result": text, "is_error": is_error, **extra}))
+
+
+def _isolate_storage(test):
+    """Give a test its own cache directory and keep it off the network."""
+    test.cache_dir = tempfile.mkdtemp()
+    for target, value in (("_cache_dir", test.cache_dir), ("gsap_library_path", "")):
+        patcher = patch.object(claude_animation, target, return_value=value)
+        patcher.start()
+        test.addCleanup(patcher.stop)
 
 
 class _FakeTools:
@@ -40,6 +50,7 @@ class _FakeTools:
         self.render_ok = render_ok
         self.prompts = []
         self.commands = []
+        self.project_files = []
 
     def __call__(self, command, **kwargs):
         self.commands.append(command)
@@ -47,6 +58,7 @@ class _FakeTools:
             self.prompts.append(kwargs.get("input"))
             return self.replies.pop(0)
         if "lint" in command:
+            self.project_files.append(sorted(os.listdir(kwargs["cwd"])))
             findings = self.lint_findings.pop(0) if self.lint_findings else []
             return _completed(json.dumps({"ok": not findings, "findings": findings}))
         if "check" in command:
@@ -70,6 +82,7 @@ class TestClaudeAnimation(unittest.TestCase):
             "claude_animation_max_attempts": 2,
         }
         self.output_dir = tempfile.mkdtemp()
+        _isolate_storage(self)
         patcher = patch.object(claude_animation.config, "app", self.settings)
         patcher.start()
         self.addCleanup(patcher.stop)
@@ -106,6 +119,112 @@ class TestClaudeAnimation(unittest.TestCase):
         claude_command = tools.commands[0]
         self.assertEqual(claude_command[claude_command.index("--tools") + 1], "")
         self.assertIn("--safe-mode", claude_command)
+
+    def test_same_request_reuses_the_cached_scene_without_asking_claude(self):
+        first = self._generate(_FakeTools([_claude_reply(GOOD_REPLY)]))
+        tools = _FakeTools([])
+
+        second = self._generate(tools)
+
+        self.assertEqual(tools.commands, [])
+        self.assertNotEqual(second.url, first.url)
+        self.assertTrue(os.path.isfile(second.url))
+        self.assertFalse(first.source_info["cached"])
+        self.assertTrue(second.source_info["cached"])
+
+    def test_a_different_request_is_not_served_from_the_cache(self):
+        self._generate(_FakeTools([_claude_reply(GOOD_REPLY)]))
+        for change in ({"duration": 5}, {"search_term": "inflation"}, {"look": "paper cut-outs"}):
+            with self.subTest(change=change):
+                tools = _FakeTools([_claude_reply(GOOD_REPLY)])
+
+                item = self._generate(tools, **change)
+
+                self.assertEqual(len(tools.prompts), 1)
+                self.assertFalse(item.source_info["cached"])
+
+    def test_cache_switched_off_asks_claude_every_time(self):
+        self.settings["claude_animation_cache"] = False
+        self._generate(_FakeTools([_claude_reply(GOOD_REPLY)]))
+        tools = _FakeTools([_claude_reply(GOOD_REPLY)])
+
+        self._generate(tools)
+
+        self.assertEqual(len(tools.prompts), 1)
+        self.assertEqual(os.listdir(self.cache_dir), [])
+
+    def test_a_skipped_scene_is_not_cached(self):
+        self.settings["claude_animation_max_attempts"] = 1
+        self.assertIsNone(self._generate(_FakeTools([_claude_reply(GOOD_REPLY)], render_ok=False)))
+        tools = _FakeTools([_claude_reply(GOOD_REPLY)])
+
+        self.assertIsNotNone(self._generate(tools))
+
+        self.assertEqual(len(tools.prompts), 1)
+
+    def test_cache_keeps_only_the_most_recently_used_entries(self):
+        with patch.object(claude_animation, "MAX_CACHE_ENTRIES", 2):
+            for number, term in enumerate(("one", "two", "three")):
+                self._generate(_FakeTools([_claude_reply(GOOD_REPLY)]), search_term=term)
+                for name in os.listdir(self.cache_dir):
+                    # Spread the timestamps: the entries are written within one clock tick.
+                    path = os.path.join(self.cache_dir, name)
+                    if os.path.getmtime(path) > 1000:
+                        os.utime(path, (number + 1, number + 1))
+
+        self.assertEqual(len(os.listdir(self.cache_dir)), 2)
+        tools = _FakeTools([_claude_reply(GOOD_REPLY)])
+        self._generate(tools, search_term="one")
+        self.assertEqual(len(tools.prompts), 1)
+
+    def test_scene_loads_gsap_from_a_copy_beside_the_document(self):
+        library = os.path.join(self.output_dir, "library.js")
+        with open(library, "w", encoding="utf-8") as handle:
+            handle.write("/* gsap */")
+        tools = _FakeTools([_claude_reply(GOOD_REPLY)])
+
+        with patch.object(claude_animation, "gsap_library_path", return_value=library):
+            self._generate(tools)
+
+        self.assertEqual(tools.project_files, [["gsap.min.js", "index.html"]])
+
+    def test_document_names_the_cdn_only_without_a_local_gsap_copy(self):
+        blocks = claude_animation.parse_scene(GOOD_REPLY)
+
+        remote = claude_animation.build_document(blocks, duration=4, width=1080, height=1920)
+        local = claude_animation.build_document(
+            blocks, duration=4, width=1080, height=1920, gsap_src="gsap.min.js"
+        )
+
+        self.assertIn(f'<script src="{claude_animation.GSAP_URL}">', remote)
+        self.assertIn('<script src="gsap.min.js">', local)
+        self.assertNotIn("http", local)
+
+    def test_claude_usage_is_recorded_without_a_cost_on_a_subscription(self):
+        usage = {"input_tokens": 10, "cache_creation_input_tokens": 200,
+                 "cache_read_input_tokens": 3000, "output_tokens": 900}
+        reply = _claude_reply(
+            GOOD_REPLY, usage=usage, total_cost_usd=0.12, modelUsage={"claude-test": {}}
+        )
+        for billed, cost in ((False, 0.0), (True, 0.12)):
+            with self.subTest(billed=billed):
+                self.settings["claude_animation_bill_usage"] = billed
+                self.settings["claude_animation_cache"] = False
+                llm_usage.begin()
+
+                self._generate(_FakeTools([reply]))
+
+                (call,) = llm_usage.summarize()["calls"]
+                self.assertEqual(call["provider"], "claude_animation")
+                self.assertEqual(call["model"], "claude-test")
+                self.assertEqual((call["prompt_tokens"], call["completion_tokens"]), (3210, 900))
+                self.assertEqual(call["cost_usd"], cost)
+                self.assertEqual(call["list_price_usd"], 0.12)
+                self.assertEqual(
+                    claude_animation.usage_totals(),
+                    {"requests": 1, "prompt_tokens": 3210, "completion_tokens": 900,
+                     "list_price_usd": 0.12},
+                )
 
     def test_document_wraps_the_scene_in_the_hyperframes_contract(self):
         blocks = claude_animation.parse_scene(GOOD_REPLY)
@@ -331,6 +450,79 @@ PLAN_REPLY = json.dumps(
 )
 
 
+class TestGsapLibrary(unittest.TestCase):
+    CONTENT = b"/* the published gsap build */"
+
+    def setUp(self):
+        self.cache_dir = tempfile.mkdtemp()
+        self.package = os.path.join(tempfile.mkdtemp(), "node_modules", "hyperframes")
+        os.makedirs(os.path.join(self.package, "bin"))
+        self.binary = os.path.join(self.package, "bin", "hyperframes")
+        with open(self.binary, "w", encoding="utf-8") as handle:
+            handle.write("")
+        self.settings = {"claude_animation_hyperframes_path": self.binary}
+        for patcher in (
+            patch.object(claude_animation, "_cache_dir", return_value=self.cache_dir),
+            patch.object(claude_animation, "GSAP_SHA256", hashlib.sha256(self.CONTENT).hexdigest()),
+            patch.object(claude_animation, "_gsap_state", {"path": "", "failed_at": None}),
+        ):
+            patcher.start()
+            self.addCleanup(patcher.stop)
+
+    def _package_file(self, content):
+        path = claude_animation._packaged_gsap_path(self.settings)
+        os.makedirs(os.path.dirname(path))
+        with open(path, "wb") as handle:
+            handle.write(content)
+        return path
+
+    def test_uses_the_copy_inside_the_installed_hyperframes_package(self):
+        path = self._package_file(self.CONTENT)
+
+        with patch.object(claude_animation.urllib.request, "urlopen") as urlopen:
+            found = claude_animation.gsap_library_path(self.settings)
+
+        self.assertEqual(found, path)
+        urlopen.assert_not_called()
+
+    def test_a_copy_with_other_contents_is_not_used(self):
+        self._package_file(b"/* something else */")
+
+        with patch.object(claude_animation.urllib.request, "urlopen", side_effect=OSError("offline")):
+            found = claude_animation.gsap_library_path(self.settings)
+
+        self.assertEqual(found, "")
+
+    def test_downloads_once_and_keeps_the_verified_file(self):
+        class _Response:
+            def __enter__(self):
+                return self
+
+            def __exit__(self, *_exc):
+                return False
+
+            def read(self):
+                return TestGsapLibrary.CONTENT
+
+        with patch.object(claude_animation.urllib.request, "urlopen", return_value=_Response()) as urlopen:
+            first = claude_animation.gsap_library_path(self.settings)
+            second = claude_animation.gsap_library_path(self.settings)
+
+        self.assertEqual(first, second)
+        self.assertEqual(os.listdir(self.cache_dir), [os.path.basename(first)])
+        with open(first, "rb") as handle:
+            self.assertEqual(handle.read(), self.CONTENT)
+        urlopen.assert_called_once()
+
+    def test_a_failed_download_is_not_retried_straight_away(self):
+        with patch.object(claude_animation.urllib.request, "urlopen", side_effect=OSError("offline")) as urlopen:
+            self.assertEqual(claude_animation.gsap_library_path(self.settings), "")
+            self.assertEqual(claude_animation.gsap_library_path(self.settings), "")
+
+        urlopen.assert_called_once()
+        self.assertEqual(os.listdir(self.cache_dir), [])
+
+
 class TestAnimationStyles(unittest.TestCase):
     def test_every_built_in_example_is_a_valid_scene(self):
         styles = animation_styles.list_styles()
@@ -366,6 +558,7 @@ class TestAnimationStyles(unittest.TestCase):
 class TestClaudeAnimationPlanning(unittest.TestCase):
     def setUp(self):
         self.settings = {"claude_animation_max_attempts": 1}
+        _isolate_storage(self)
         patcher = patch.object(claude_animation.config, "app", self.settings)
         patcher.start()
         self.addCleanup(patcher.stop)
@@ -386,6 +579,23 @@ class TestClaudeAnimationPlanning(unittest.TestCase):
         options.update(overrides)
         with patch.object(claude_animation.subprocess, "run", side_effect=tools):
             return claude_animation.plan_scenes(**options)
+
+    def test_same_plan_request_is_answered_from_the_cache(self):
+        first = self._plan(_FakeTools([_claude_reply(PLAN_REPLY)]))
+        tools = _FakeTools([])
+
+        second = self._plan(tools)
+
+        self.assertEqual(tools.commands, [])
+        self.assertEqual(second, first)
+
+    def test_an_unusable_plan_is_not_cached(self):
+        self.assertIsNone(self._plan(_FakeTools([_claude_reply("no plan today")])))
+        tools = _FakeTools([_claude_reply(PLAN_REPLY)])
+
+        self.assertIsNotNone(self._plan(tools))
+
+        self.assertEqual(len(tools.prompts), 1)
 
     def test_plan_gives_a_shared_look_and_one_idea_per_scene(self):
         tools = _FakeTools([_claude_reply("Here it is:\n```json\n" + PLAN_REPLY + "\n```")])

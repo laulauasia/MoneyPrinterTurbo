@@ -122,6 +122,8 @@
     "Claude Code Animation Footage": "Добавлять стоковое видео",
     "Claude Code Animation Footage None": "Только анимация",
     "Claude Code Animation Footage Help": "Сцены, показывающие что-то конкретное и снимаемое, берут стоковый клип из этого источника; остальные остаются анимацией. Нужен API-ключ источника.",
+    "Claude Code Animation Cache": "Использовать готовые сцены повторно",
+    "Claude Code Animation Cache Help": "Сохраняет готовые сцены и использует их снова, когда сценарий, тайминг озвучки и стиль совпадают, поэтому повтор не расходует лимит Claude. Снимите флажок, чтобы каждый раз получать новые сцены.",
     "Claude Code Animation Quality": "Качество рендера",
     "Claude Code Animation Quality Help": "draft — самый быстрый; looks и delivery чётче, но медленнее.",
     "Task Actions": "Действия",

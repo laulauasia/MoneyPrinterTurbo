@@ -98,6 +98,42 @@ def record_cost(kind: str, provider: str, model: str, cost_usd: Any) -> None:
         logger.warning(f"could not record {kind} cost: {type(exc).__name__}")
 
 
+def record_subscription_request(
+    kind: str,
+    provider: str,
+    model: str,
+    *,
+    prompt_tokens: int,
+    completion_tokens: int,
+    list_price_usd: Any,
+    billed: bool,
+) -> None:
+    """Store a request made on a flat-rate subscription.
+
+    Nothing is charged per request, so its cost is 0 unless ``billed`` asks for
+    the list price (what the same tokens cost on the API) to count as the cost.
+    The list price is stored either way.
+    """
+    try:
+        records = _records.get()
+        if records is None:
+            return
+        list_price = _number(list_price_usd)
+        records.append(
+            {
+                "kind": kind,
+                "provider": provider,
+                "model": model,
+                "prompt_tokens": int(prompt_tokens),
+                "completion_tokens": int(completion_tokens),
+                "cost_usd": list_price if billed else 0.0,
+                "list_price_usd": list_price,
+            }
+        )
+    except Exception as exc:
+        logger.warning(f"could not record {kind} usage: {type(exc).__name__}")
+
+
 def compute_client_price(
     cost_usd: float,
     markup_percent: float,

@@ -122,6 +122,8 @@
     "Claude Code Animation Footage": "스톡 영상 섞기",
     "Claude Code Animation Footage None": "애니메이션만",
     "Claude Code Animation Footage Help": "구체적이고 촬영 가능한 대상을 보여주는 장면은 이 소스의 스톡 클립을 쓰고, 나머지는 애니메이션으로 유지됩니다. 해당 소스의 API 키가 필요합니다.",
+    "Claude Code Animation Cache": "이전 장면 재사용",
+    "Claude Code Animation Cache Help": "완성된 장면을 보관해 두고 대본, 음성 타이밍, 스타일이 같으면 다시 사용하므로 재생성 시 Claude 사용량이 들지 않습니다. 매번 새 장면을 원하면 선택을 해제하세요.",
     "Claude Code Animation Quality": "렌더링 품질",
     "Claude Code Animation Quality Help": "draft가 가장 빠르며, looks와 delivery는 더 선명하지만 느립니다.",
     "Task Actions": "동작",

@@ -122,6 +122,8 @@
     "Claude Code Animation Footage": "Campur Video Stok",
     "Claude Code Animation Footage None": "Hanya animasi",
     "Claude Code Animation Footage Help": "Adegan yang menampilkan hal konkret dan bisa difilmkan memakai klip stok dari sumber ini; sisanya tetap animasi. Memerlukan kunci API sumber tersebut.",
+    "Claude Code Animation Cache": "Gunakan ulang adegan sebelumnya",
+    "Claude Code Animation Cache Help": "Menyimpan adegan yang sudah jadi dan memakainya lagi saat naskah, waktu suara, dan gaya sama, sehingga pengulangan tidak memakai kuota Claude. Hapus centang untuk mendapat adegan baru setiap kali.",
     "Claude Code Animation Quality": "Kualitas Render",
     "Claude Code Animation Quality Help": "draft paling cepat; looks dan delivery lebih tajam tetapi lebih lambat.",
     "Task Actions": "Tindakan",

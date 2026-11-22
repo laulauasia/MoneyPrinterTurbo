@@ -1,0 +1,42 @@
+name = "Swiss Grid"
+summary = "Strict grid, huge grotesque type, black, white and one red. Clean editorial poster in motion."
+direction = '''
+- Surface: white (#ffffff) or black (#0a0a0a); swap between scenes if useful.
+- Palette: black, white and exactly one signal colour, red #e30613.
+- Layout sits on a visible logic: everything aligns to a left margin of 90px
+  and a 12-column grid; large empty areas are part of the design. Use thin
+  rules (4px) and solid bars, a circle or a square, nothing decorative.
+- Type: Inter 900 for words set very large (180-300px), tight leading, flush
+  left, lower or upper case but consistent; Inter 400 for one small label.
+- Motion: precise and mechanical. Bars wipe in along one axis (scaleX or scaleY
+  from an edge), words slide in from behind a mask line, numbers count. Use
+  power4.out and expo.out, no bounce, no rotation except exact 90 degrees.
+'''
+example = '''
+```css
+#sw-page { position: absolute; inset: 0; background: #ffffff; }
+#sw-bar { position: absolute; left: 0; top: 0; width: 1080px; height: 560px; background: #e30613; }
+#sw-mask { position: absolute; left: 90px; top: 640px; width: 900px; height: 560px; overflow: hidden; }
+#sw-word { font: 900 250px/0.92 Inter, sans-serif; color: #0a0a0a; letter-spacing: -8px; }
+#sw-rule { position: absolute; left: 90px; top: 1250px; width: 900px; height: 6px; background: #0a0a0a; }
+#sw-label { position: absolute; left: 90px; top: 1290px; font: 400 44px Inter, sans-serif; color: #0a0a0a; }
+#sw-dot { position: absolute; left: 90px; top: 150px; width: 260px; height: 260px; border-radius: 50%; background: #ffffff; }
+```
+```html
+<div id="sw-page" class="clip" data-start="0" data-duration="4" data-track-index="0">
+  <div id="sw-bar"></div>
+  <div id="sw-dot"></div>
+  <div id="sw-mask"><div id="sw-word">less<br>noise</div></div>
+  <div id="sw-rule"></div>
+  <div id="sw-label">Rule 01</div>
+</div>
+```
+```js
+tl.fromTo("#sw-bar", { scaleY: 0, transformOrigin: "center top" }, { scaleY: 1, duration: 0.7, ease: "expo.out" }, 0);
+tl.fromTo("#sw-word", { y: 580 }, { y: 0, duration: 0.8, ease: "power4.out" }, 0.4);
+tl.fromTo("#sw-rule", { scaleX: 0, transformOrigin: "left center" }, { scaleX: 1, duration: 0.6, ease: "expo.out" }, 0.9);
+tl.fromTo("#sw-label", { opacity: 0 }, { opacity: 1, duration: 0.3 }, 1.3);
+tl.fromTo("#sw-dot", { scale: 0 }, { scale: 1, duration: 0.5, ease: "power4.out" }, 0.7);
+tl.fromTo("#sw-dot", { x: 0 }, { x: 640, duration: 2.5, ease: "power1.inOut" }, 1.3);
+```
+'''

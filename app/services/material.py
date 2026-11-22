@@ -3858,6 +3858,7 @@ def _generate_videos_claude_animation(
 
     subject = str(context.get("subject") or "")
     script = str(context.get("script") or "")
+    style_slug = str(context.get("style") or "")
     # With subtitle timings each scene lasts as long as the lines spoken over
     # it; without them every scene has the configured clip length.
     subtitle_path = str(context.get("subtitle_path") or "")
@@ -3930,6 +3931,7 @@ def _generate_videos_claude_animation(
                 look=look,
                 narration=narration,
                 position=(slot + 1, clips_needed) if planned else None,
+                style_slug=style_slug,
             )
             if item is not None:
                 return item, idea
@@ -3952,6 +3954,7 @@ def _generate_videos_claude_animation(
         plan = claude_animation.plan_scenes(
             script=script, scene_count=clips_needed, duration=clip_duration,
             video_aspect=video_aspect, subject=subject, timings=timings,
+            style_slug=style_slug,
         )
         planned_scenes = plan.scenes if plan else ()
         look = plan.look if plan else ""

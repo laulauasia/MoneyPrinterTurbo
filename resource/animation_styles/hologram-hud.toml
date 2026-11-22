@@ -1,0 +1,53 @@
+name = "Hologram HUD"
+summary = "Glowing cyan interface rings, scan lines and readouts floating on black. Sci-fi display."
+direction = '''
+- Surface: black-blue (#020812) with faint horizontal scan lines
+  (repeating-linear-gradient, rgba(56,225,255,0.06) every 6px).
+- Draw in light only: cyan #38e1ff lines 3-6px and thin fills at 8-15%
+  opacity, with a glow (filter: drop-shadow(0 0 12px #38e1ff)). One warning
+  accent, orange #ff9f1c, for the value that matters.
+- Vocabulary: concentric rings with gaps (stroke-dasharray), tick marks round
+  a circle, corner brackets framing a target, small bar meters, crosshairs,
+  thin leader lines to labels, tiny numeric readouts.
+- Type: JetBrains Mono 700, upper case, cyan, 40-60px labels and one larger
+  readout; letter-spacing 4px. At most four short labels.
+- Motion: rings spin at different speeds in opposite directions the whole
+  time; elements switch on with a quick flicker (opacity 0, 1, 0.3, 1);
+  brackets close in on the target; meters fill; a scan bar sweeps top to bottom.
+'''
+example = '''
+```css
+#hud-screen { position: absolute; inset: 0; background-color: #020812; background-image: repeating-linear-gradient(0deg, rgba(56,225,255,0.06) 0, rgba(56,225,255,0.06) 2px, transparent 2px, transparent 6px); }
+#hud-art { position: absolute; left: 90px; top: 480px; width: 900px; height: 900px; filter: drop-shadow(0 0 12px #38e1ff); }
+#hud-art .hud-ring { fill: none; stroke: #38e1ff; }
+#hud-core { fill: #38e1ff; fill-opacity: 0.14; stroke: #38e1ff; stroke-width: 4; }
+#hud-mark { fill: none; stroke: #ff9f1c; stroke-width: 8; }
+#hud-head { position: absolute; left: 90px; top: 280px; font: 700 76px "JetBrains Mono", monospace; color: #38e1ff; letter-spacing: 4px; }
+#hud-read { position: absolute; left: 0; top: 860px; width: 100%; text-align: center; font: 700 130px "JetBrains Mono", monospace; color: #ff9f1c; }
+#hud-scan { position: absolute; left: 0; top: 0; width: 1080px; height: 10px; background: #38e1ff; opacity: 0.5; }
+```
+```html
+<div id="hud-screen" class="clip" data-start="0" data-duration="4" data-track-index="0">
+  <svg id="hud-art" viewBox="0 0 900 900">
+    <circle id="hud-r1" class="hud-ring" cx="450" cy="450" r="400" stroke-width="5" stroke-dasharray="360 60 40 60" />
+    <circle id="hud-r2" class="hud-ring" cx="450" cy="450" r="330" stroke-width="16" stroke-dasharray="6 20" />
+    <circle id="hud-r3" class="hud-ring" cx="450" cy="450" r="260" stroke-width="4" stroke-dasharray="500 140" />
+    <circle id="hud-core" cx="450" cy="450" r="200" />
+    <path id="hud-mark" d="M210 250 L210 210 L250 210 M650 210 L690 210 L690 250 M690 650 L690 690 L650 690 M250 690 L210 690 L210 650" />
+  </svg>
+  <div id="hud-head">SCAN // CORE</div>
+  <div id="hud-read">98.6%</div>
+  <div id="hud-scan"></div>
+</div>
+```
+```js
+tl.fromTo("#hud-r1", { rotation: 0, svgOrigin: "450 450" }, { rotation: 120, duration: 3.9, ease: "none" }, 0);
+tl.fromTo("#hud-r2", { rotation: 0, svgOrigin: "450 450" }, { rotation: -90, duration: 3.9, ease: "none" }, 0);
+tl.fromTo("#hud-r3", { rotation: 0, svgOrigin: "450 450" }, { rotation: 200, duration: 3.9, ease: "none" }, 0);
+tl.fromTo("#hud-core", { scale: 0, svgOrigin: "450 450" }, { scale: 1, duration: 0.5, ease: "power2.out" }, 0.2);
+tl.fromTo("#hud-mark", { scale: 1.6, opacity: 0, svgOrigin: "450 450" }, { scale: 1, opacity: 1, duration: 0.5, ease: "power3.out" }, 0.6);
+tl.fromTo("#hud-head", { opacity: 0 }, { opacity: 1, duration: 0.08, repeat: 4, yoyo: true }, 0.4);
+tl.fromTo("#hud-read", { opacity: 0, scale: 0.8 }, { opacity: 1, scale: 1, duration: 0.3, ease: "power2.out" }, 1.1);
+tl.fromTo("#hud-scan", { y: 300 }, { y: 1500, duration: 2.6, ease: "none" }, 1.2);
+```
+'''

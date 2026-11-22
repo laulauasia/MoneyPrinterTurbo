@@ -1,0 +1,58 @@
+name = "Ink Wash"
+summary = "Chinese ink painting: soft grey washes and a few black brush strokes on rice paper, with one red seal."
+direction = '''
+- Surface: rice paper (#f3efe4). Most of the frame stays empty: the empty
+  paper is mist, water and sky.
+- Ink only: black #1a1a1a thinned to greys (opacity 0.15-0.8). Washes are
+  soft-edged blobs: blur them (filter: blur(14-30px)) or run them through an
+  inline SVG feTurbulence + feDisplacementMap filter so edges bleed. Brush
+  strokes are tapered paths, thick where the brush lands and thin where it
+  lifts. The only colour is one small vermilion seal (#c8281e) and at most a
+  hint of pale red for blossom or sun.
+- Subjects: layered mountains fading with distance (nearest darkest), a lone
+  pine, bamboo stalks with leaf strokes, a small boat, birds as two flicks.
+- Type: Noto Sans JP 700 or Playfair Display 700 in ink black, small and off
+  to one side, at most three words; the seal sits below it.
+- Motion: ink arrives like ink: washes bloom (scale from 0.6 with opacity
+  rising slowly), strokes are painted along their length, mist layers drift
+  sideways very slowly. Long sine eases; nothing snaps.
+'''
+example = '''
+```css
+#iw-paper { position: absolute; inset: 0; background: #f3efe4; overflow: hidden; }
+#iw-far, #iw-mid, #iw-near { position: absolute; background: #1a1a1a; }
+#iw-far { left: 40px; top: 760px; width: 700px; height: 760px; border-radius: 50%; opacity: 0.16; filter: blur(26px); }
+#iw-mid { left: 380px; top: 860px; width: 760px; height: 700px; border-radius: 50%; opacity: 0.32; filter: blur(18px); }
+#iw-near { left: -140px; top: 1060px; width: 760px; height: 640px; border-radius: 50%; opacity: 0.72; filter: blur(12px); }
+#iw-mist { position: absolute; left: -300px; top: 1290px; width: 1680px; height: 700px; background: #f3efe4; filter: blur(60px); }
+#iw-sun { position: absolute; left: 700px; top: 520px; width: 150px; height: 150px; border-radius: 50%; background: #c8281e; opacity: 0.75; filter: blur(3px); }
+#iw-art { position: absolute; left: 0; top: 0; width: 1080px; height: 1920px; }
+#iw-art .iw-stroke { fill: none; stroke: #1a1a1a; stroke-width: 9; stroke-linecap: round; stroke-dasharray: 1; }
+#iw-word { position: absolute; left: 110px; top: 290px; font: 700 110px "Playfair Display", serif; color: #1a1a1a; }
+#iw-seal { position: absolute; left: 116px; top: 450px; width: 84px; height: 84px; background: #c8281e; border-radius: 8px; }
+```
+```html
+<div id="iw-paper" class="clip" data-start="0" data-duration="4" data-track-index="0">
+  <div id="iw-sun"></div>
+  <div id="iw-far"></div>
+  <div id="iw-mid"></div>
+  <div id="iw-near"></div>
+  <div id="iw-mist"></div>
+  <svg id="iw-art" viewBox="0 0 1080 1920">
+    <path class="iw-stroke" d="M250 760 Q275 735 300 760 M330 700 Q360 672 390 700 M430 780 Q452 758 474 780" pathLength="1" />
+  </svg>
+  <div id="iw-word">Stillness</div>
+  <div id="iw-seal"></div>
+</div>
+```
+```js
+tl.fromTo("#iw-far", { opacity: 0, scale: 0.7 }, { opacity: 0.16, scale: 1, duration: 1.6, ease: "sine.out" }, 0);
+tl.fromTo("#iw-mid", { opacity: 0, scale: 0.7 }, { opacity: 0.32, scale: 1, duration: 1.6, ease: "sine.out" }, 0.4);
+tl.fromTo("#iw-near", { opacity: 0, scale: 0.7 }, { opacity: 0.72, scale: 1, duration: 1.6, ease: "sine.out" }, 0.8);
+tl.fromTo("#iw-sun", { opacity: 0 }, { opacity: 0.75, duration: 1.5, ease: "sine.out" }, 0.6);
+tl.fromTo("#iw-mist", { x: -120 }, { x: 160, duration: 3.9, ease: "sine.inOut" }, 0);
+tl.fromTo(".iw-stroke", { strokeDashoffset: 1 }, { strokeDashoffset: 0, duration: 0.9, ease: "power1.inOut" }, 1.8);
+tl.fromTo("#iw-word", { opacity: 0 }, { opacity: 1, duration: 1.0, ease: "sine.out" }, 1.6);
+tl.fromTo("#iw-seal", { opacity: 0, scale: 1.5 }, { opacity: 1, scale: 1, duration: 0.3, ease: "power3.in" }, 2.6);
+```
+'''

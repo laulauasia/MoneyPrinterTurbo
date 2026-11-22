@@ -1,0 +1,42 @@
+name = "Bauhaus Shapes"
+summary = "Circles, squares and triangles in red, yellow, blue and black on warm paper. Geometric and playful."
+direction = '''
+- Surface: warm paper (#f1e9d8).
+- Palette: red #d62828, yellow #f6b700, blue #1d4e9e, black #111111, used as
+  flat solid fills. No gradients, shadows or outlines thinner than 10px.
+- Everything is built from primary geometry: circles, half circles, quarter
+  circles, squares, triangles, thick bars and concentric rings, composed on a
+  diagonal or in a balanced asymmetric cluster. Overlaps are welcome.
+- Type: Outfit 800, black, lower case, at most three words, set along an edge
+  or rotated exactly 90 degrees.
+- Motion: shapes rotate, roll and slide along straight lines or arcs into
+  place with power3.inOut, like parts of a machine or a mobile; afterwards one
+  or two keep turning slowly.
+'''
+example = '''
+```css
+#bh-page { position: absolute; inset: 0; background: #f1e9d8; }
+#bh-circle { position: absolute; left: 140px; top: 560px; width: 520px; height: 520px; border-radius: 50%; background: #d62828; }
+#bh-square { position: absolute; left: 540px; top: 840px; width: 380px; height: 380px; background: #1d4e9e; }
+#bh-tri { position: absolute; left: 560px; top: 420px; width: 0; height: 0; border-left: 190px solid transparent; border-right: 190px solid transparent; border-bottom: 330px solid #f6b700; }
+#bh-bar { position: absolute; left: 120px; top: 1260px; width: 840px; height: 36px; background: #111111; }
+#bh-word { position: absolute; left: 120px; top: 230px; font: 800 150px Outfit, sans-serif; color: #111111; }
+```
+```html
+<div id="bh-page" class="clip" data-start="0" data-duration="4" data-track-index="0">
+  <div id="bh-circle"></div>
+  <div id="bh-square"></div>
+  <div id="bh-tri"></div>
+  <div id="bh-bar"></div>
+  <div id="bh-word">build</div>
+</div>
+```
+```js
+tl.fromTo("#bh-circle", { x: -800 }, { x: 0, duration: 0.9, ease: "power3.inOut" }, 0);
+tl.fromTo("#bh-square", { y: 1200, rotation: 90 }, { y: 0, rotation: 0, duration: 0.9, ease: "power3.inOut" }, 0.25);
+tl.fromTo("#bh-tri", { y: -900 }, { y: 0, duration: 0.8, ease: "power3.inOut" }, 0.5);
+tl.fromTo("#bh-bar", { scaleX: 0, transformOrigin: "left center" }, { scaleX: 1, duration: 0.6, ease: "power3.out" }, 0.9);
+tl.fromTo("#bh-word", { opacity: 0, x: -60 }, { opacity: 1, x: 0, duration: 0.5, ease: "power3.out" }, 1.2);
+tl.fromTo("#bh-tri", { rotation: 0 }, { rotation: 180, duration: 2.3, ease: "power1.inOut" }, 1.5);
+```
+'''

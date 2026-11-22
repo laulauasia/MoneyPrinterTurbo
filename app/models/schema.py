@@ -122,6 +122,10 @@ class VideoParams(BaseModel):
     video_count: int = Field(default=1, ge=1)
 
     video_source: Optional[str] = "pexels"
+    # Style preset for the "claude_animation" source: a file name from
+    # resource/animation_styles or storage/animation_styles without ".toml".
+    # Empty uses claude_animation_style_preset from config.toml.
+    animation_style: Optional[str] = ""
     video_materials: Optional[List[MaterialInfo]] = (
         None  # Materials used to generate the video
     )

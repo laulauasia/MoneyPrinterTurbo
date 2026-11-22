@@ -1,0 +1,41 @@
+name = "Chalkboard"
+summary = "White and pastel chalk on a dark green board, dusty and hand-drawn. Classroom feel."
+direction = '''
+- Surface: a dark green board (#23402f) with a slightly lighter wooden-frame
+  feel only if needed; no gradients.
+- Draw with chalk lines: #f2efe6 strokes 9-12px wide, round caps, dashed lightly
+  (stroke-dasharray such as 2 1 on a normalised path) so they look dusty. Up to
+  two pastel chalks for emphasis: yellow #ffd866 and pink #ff9aa2.
+- Pictures are outline sketches and simple diagrams with arrows and labels.
+- Type: Nunito 800, chalk white or a pastel, at most three words, upper case.
+- Motion: lines are drawn on stroke by stroke (tween strokeDashoffset to 0),
+  labels fade up after them, emphasis is a chalk circle or underline drawn last.
+  Then small parts keep moving: an arrow nudges, a number pulses.
+'''
+example = '''
+```css
+#cb-board { position: absolute; inset: 0; background: #23402f; }
+#cb-word { position: absolute; left: 0; top: 240px; width: 100%; text-align: center; font: 800 140px Nunito, sans-serif; color: #f2efe6; letter-spacing: 6px; }
+#cb-art { position: absolute; left: 90px; top: 520px; width: 900px; height: 800px; }
+#cb-art .cb-line { fill: none; stroke: #f2efe6; stroke-width: 11; stroke-linecap: round; stroke-linejoin: round; stroke-dasharray: 1; }
+#cb-art #cb-curve { stroke: #ffd866; stroke-width: 14; }
+#cb-ring { stroke: #ff9aa2; }
+```
+```html
+<div id="cb-board" class="clip" data-start="0" data-duration="4" data-track-index="0">
+  <div id="cb-word">GROWTH</div>
+  <svg id="cb-art" viewBox="0 0 900 800">
+    <path id="cb-axes" class="cb-line" d="M110 60 L110 700 L840 700" pathLength="1" />
+    <path id="cb-curve" class="cb-line" d="M130 670 Q500 650 620 420 T810 110" pathLength="1" />
+    <circle id="cb-ring" class="cb-line" cx="810" cy="110" r="55" pathLength="1" />
+  </svg>
+</div>
+```
+```js
+tl.fromTo("#cb-axes", { strokeDashoffset: 1 }, { strokeDashoffset: 0, duration: 0.9, ease: "power1.inOut" }, 0.1);
+tl.fromTo("#cb-word", { opacity: 0, y: 40 }, { opacity: 1, y: 0, duration: 0.5, ease: "power2.out" }, 0.6);
+tl.fromTo("#cb-curve", { strokeDashoffset: 1 }, { strokeDashoffset: 0, duration: 1.4, ease: "power2.inOut" }, 1.0);
+tl.fromTo("#cb-ring", { strokeDashoffset: 1 }, { strokeDashoffset: 0, duration: 0.5, ease: "power1.out" }, 2.4);
+tl.fromTo("#cb-ring", { scale: 1, transformOrigin: "50% 50%" }, { scale: 1.25, duration: 0.9, ease: "sine.inOut" }, 2.9);
+```
+'''

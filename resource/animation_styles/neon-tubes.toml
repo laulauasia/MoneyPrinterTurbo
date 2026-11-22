@@ -1,0 +1,44 @@
+name = "Neon Tubes"
+summary = "Glowing neon sign outlines on a dark brick-night wall, flickering on tube by tube."
+direction = '''
+- Surface: very dark wall (#0c0a14), optionally a faint brick or tile grid in
+  rgba(255,255,255,0.04).
+- Everything is a neon tube: an outline stroke 12-16px with round caps, drawn
+  twice: a coloured stroke with a glow (filter: drop-shadow(0 0 10px colour)
+  drop-shadow(0 0 30px colour)) and a thin near-white core (4px, #fff5fb) on
+  top. Tube colours: pink #ff3cac, cyan #2de2e6, yellow #f9f871, violet #9d4edd.
+  No fills. Shapes are single continuous lines with small gaps, like bent glass.
+- Type: Outfit 800 or Oswald 700 upper case drawn as outlined letters
+  (transparent fill, -webkit-text-stroke 4px colour) with the same glow; at most
+  two words.
+- Motion: tubes switch on with a stutter (opacity 0, 1, 0.2, 1), one after
+  another; one tube keeps flickering faintly; a small sign element blinks or a
+  line chases along (strokeDashoffset).
+'''
+example = '''
+```css
+#nt-wall { position: absolute; inset: 0; background-color: #0c0a14; background-image: linear-gradient(rgba(255,255,255,0.04) 2px, transparent 2px); background-size: 100% 90px; }
+#nt-art { position: absolute; left: 90px; top: 620px; width: 900px; height: 760px; }
+#nt-art .nt-pink { fill: none; stroke: #ff3cac; stroke-width: 14; stroke-linecap: round; stroke-linejoin: round; filter: drop-shadow(0 0 10px #ff3cac) drop-shadow(0 0 30px #ff3cac); }
+#nt-art .nt-cyan { fill: none; stroke: #2de2e6; stroke-width: 14; stroke-linecap: round; stroke-linejoin: round; filter: drop-shadow(0 0 10px #2de2e6) drop-shadow(0 0 30px #2de2e6); }
+#nt-word { position: absolute; left: 0; top: 280px; width: 100%; text-align: center; font: 800 210px Outfit, sans-serif; color: #fff5fb; text-shadow: 0 0 12px #f9f871, 0 0 40px #f9f871, 0 0 80px #f9f871; letter-spacing: 10px; }
+```
+```html
+<div id="nt-wall" class="clip" data-start="0" data-duration="4" data-track-index="0">
+  <div id="nt-word">OPEN</div>
+  <svg id="nt-art" viewBox="0 0 900 760">
+    <path id="nt-cup" class="nt-pink" d="M230 250 L250 600 Q260 660 320 660 L560 660 Q620 660 630 600 L650 250 Z" />
+    <path id="nt-handle" class="nt-pink" d="M650 330 Q790 330 780 450 Q770 560 640 540" />
+    <path id="nt-steam1" class="nt-cyan" d="M360 180 Q320 130 360 80 Q400 30 360 -10" />
+    <path id="nt-steam2" class="nt-cyan" d="M520 180 Q480 130 520 80 Q560 30 520 -10" />
+  </svg>
+</div>
+```
+```js
+tl.fromTo("#nt-cup", { opacity: 0 }, { opacity: 1, duration: 0.07, repeat: 6, yoyo: true }, 0.2);
+tl.fromTo("#nt-handle", { opacity: 0 }, { opacity: 1, duration: 0.07, repeat: 4, yoyo: true }, 0.7);
+tl.fromTo("#nt-word", { opacity: 0 }, { opacity: 1, duration: 0.06, repeat: 8, yoyo: true }, 1.1);
+tl.fromTo("#nt-steam1", { opacity: 0, y: 40 }, { opacity: 1, y: -30, duration: 0.7, ease: "sine.inOut", repeat: 2, yoyo: true }, 1.6);
+tl.fromTo("#nt-steam2", { opacity: 0, y: 40 }, { opacity: 1, y: -30, duration: 0.7, ease: "sine.inOut", repeat: 2, yoyo: true }, 1.7);
+```
+'''

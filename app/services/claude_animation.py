@@ -391,9 +391,15 @@ def gsap_library_path(settings: Mapping[str, Any] | None = None) -> str:
         return cached
 
 
-def style_preset(settings: Mapping[str, Any] | None = None) -> AnimationStyle | None:
-    """The configured named style, or ``None`` when none is set or its file is gone."""
-    return animation_styles.get_style(_text(_settings(settings), "claude_animation_style_preset"))
+def style_preset(settings: Mapping[str, Any] | None = None, slug: str = "") -> AnimationStyle | None:
+    """The style named by ``slug`` (one video's choice), else the configured one.
+
+    ``None`` when neither is set or the file is gone.
+    """
+    chosen = animation_styles.get_style(slug)
+    if chosen is None and str(slug or "").strip():
+        logger.warning(f"animation style {slug!r} not found, using the configured style instead")
+    return chosen or animation_styles.get_style(_text(_settings(settings), "claude_animation_style_preset"))
 
 
 @dataclass(frozen=True)
@@ -637,6 +643,7 @@ def plan_scenes(
     video_aspect: VideoAspect,
     subject: str = "",
     timings: Sequence[TimedScene] = (),
+    style_slug: str = "",
     settings: Mapping[str, Any] | None = None,
 ) -> ScenePlan | None:
     """Plan the whole video in one request.
@@ -655,7 +662,7 @@ def plan_scenes(
     prompt = build_plan_prompt(
         script=script, scene_count=scene_count, duration=duration,
         width=width, height=height, subject=subject,
-        preset=style_preset(source), style=_text(source, "claude_animation_style"),
+        preset=style_preset(source, style_slug), style=_text(source, "claude_animation_style"),
         timings=timings, footage=bool(footage_source(source)),
     )
     key = _cache_key("plan", source, PLAN_SYSTEM_PROMPT, prompt) if cache_enabled(source) else ""
@@ -785,8 +792,8 @@ Rules:
   before {duration - 0.1:.1f}s.
 - Draw with HTML, CSS and inline SVG only: no images, video, audio, remote URLs,
   extra scripts, timers, Math.random, Date or infinite repeats.
-- Fonts: Inter, Montserrat, Outfit, Oswald, Poppins, Playfair Display or
-  JetBrains Mono.
+- Fonts: Inter, Montserrat, Outfit, Nunito, Oswald, Poppins, Archivo Black,
+  League Gothic, Playfair Display, EB Garamond, Noto Sans JP or JetBrains Mono.
 - On-screen text is at most a few large words. Keep everything inside the middle
   90% of the frame and keep the bottom 22% free of text: subtitles go there.
   Text must fit inside its box and contrast clearly with what is behind it.
@@ -1115,16 +1122,18 @@ def generate_video(
     look: str = "",
     narration: str = "",
     position: tuple[int, int] | None = None,
+    style_slug: str = "",
     settings: Mapping[str, Any] | None = None,
 ) -> MaterialInfo | None:
     """Author and render one clip. Returns ``None`` when the scene is skipped.
 
     ``search_term`` is the scene idea: a planned idea or a bare keyword.
     ``look``, ``narration`` and ``position`` come from ``plan_scenes``.
+    ``style_slug`` is this video's style preset; empty uses the configured one.
     ``duration`` is in seconds and is rounded to a tenth.
     """
     source = _settings(settings)
-    preset = style_preset(source)
+    preset = style_preset(source, style_slug)
     try:
         duration = round(float(duration), 1)
     except (TypeError, ValueError, OverflowError):

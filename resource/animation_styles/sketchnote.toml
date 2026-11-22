@@ -1,0 +1,53 @@
+name = "Sketchnote"
+summary = "Visual notes on cream paper: ink doodles, boxes and arrows with soft highlighter colour."
+direction = '''
+- Surface: cream notebook paper (#fdf6e3), optionally with faint dot grid.
+- Ink: #2b2b2b outlines 7-9px with round joins. Colour is highlighter only:
+  flat blocks of yellow #ffe066, mint #96f2d7 or coral #ffa8a8 sitting slightly
+  off-register behind the ink, never filling it exactly.
+- Build the page from note elements: boxed keywords, banners, arrows, bullet
+  dots, small icons, connected into a little map.
+- Type: Nunito 800 for keywords in upper case, at most three words per scene.
+- Motion: elements arrive in reading order: a highlighter block wipes in
+  (scaleX from 0), its ink outline draws, the word pops, an arrow draws to the
+  next item. Finish with a small wiggle on the newest item.
+'''
+example = '''
+```css
+#sn-page { position: absolute; inset: 0; background: #fdf6e3; }
+#sn-hl { position: absolute; left: 215px; top: 300px; width: 690px; height: 200px; background: #ffe066; border-radius: 10px; }
+#sn-word { position: absolute; left: 0; top: 315px; width: 100%; text-align: center; font: 800 130px Nunito, sans-serif; color: #2b2b2b; }
+#sn-art { position: absolute; left: 0; top: 0; width: 1080px; height: 1920px; }
+#sn-art .sn-ink { fill: none; stroke: #2b2b2b; stroke-width: 9; stroke-linecap: round; stroke-linejoin: round; stroke-dasharray: 1; }
+#sn-dot1, #sn-dot2 { position: absolute; width: 220px; height: 220px; border-radius: 50%; top: 980px; }
+#sn-dot1 { left: 170px; background: #96f2d7; }
+#sn-dot2 { left: 690px; background: #ffa8a8; }
+```
+```html
+<div id="sn-page" class="clip" data-start="0" data-duration="4" data-track-index="0">
+  <div id="sn-hl"></div>
+  <div id="sn-dot1"></div>
+  <div id="sn-dot2"></div>
+  <svg id="sn-art" viewBox="0 0 1080 1920">
+    <rect id="sn-box" class="sn-ink" x="190" y="285" width="700" height="200" rx="14" pathLength="1" />
+    <path id="sn-a1" class="sn-ink" d="M420 500 Q330 700 290 950 M250 890 L290 955 L345 905" pathLength="1" />
+    <path id="sn-a2" class="sn-ink" d="M660 500 Q760 700 795 950 M740 905 L795 955 L835 890" pathLength="1" />
+    <circle id="sn-c1" class="sn-ink" cx="290" cy="1085" r="105" pathLength="1" />
+    <circle id="sn-c2" class="sn-ink" cx="810" cy="1085" r="105" pathLength="1" />
+  </svg>
+  <div id="sn-word">PLAN</div>
+</div>
+```
+```js
+tl.fromTo("#sn-hl", { scaleX: 0, transformOrigin: "left center" }, { scaleX: 1, duration: 0.5, ease: "power2.out" }, 0.1);
+tl.fromTo("#sn-box", { strokeDashoffset: 1 }, { strokeDashoffset: 0, duration: 0.6 }, 0.4);
+tl.fromTo("#sn-word", { opacity: 0, scale: 0.8 }, { opacity: 1, scale: 1, duration: 0.4, ease: "back.out(2)" }, 0.8);
+tl.fromTo("#sn-a1", { strokeDashoffset: 1 }, { strokeDashoffset: 0, duration: 0.6 }, 1.2);
+tl.fromTo("#sn-dot1", { scale: 0 }, { scale: 1, duration: 0.4, ease: "back.out(1.8)" }, 1.7);
+tl.fromTo("#sn-c1", { strokeDashoffset: 1 }, { strokeDashoffset: 0, duration: 0.4 }, 1.8);
+tl.fromTo("#sn-a2", { strokeDashoffset: 1 }, { strokeDashoffset: 0, duration: 0.6 }, 2.0);
+tl.fromTo("#sn-dot2", { scale: 0 }, { scale: 1, duration: 0.4, ease: "back.out(1.8)" }, 2.5);
+tl.fromTo("#sn-c2", { strokeDashoffset: 1 }, { strokeDashoffset: 0, duration: 0.4 }, 2.6);
+tl.fromTo("#sn-dot2", { rotation: 0 }, { rotation: 12, duration: 0.8, ease: "sine.inOut" }, 3.0);
+```
+'''

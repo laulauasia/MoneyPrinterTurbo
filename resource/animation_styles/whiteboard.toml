@@ -1,0 +1,44 @@
+name = "Whiteboard"
+summary = "Black marker lines that draw themselves on a white board, with one red or blue accent. Classic explainer."
+direction = '''
+- Surface: an off-white board (#fbfbf8), nothing else behind the drawing.
+- Draw with marker lines only: #1c1c1c strokes 10-14px wide with round caps and
+  joins, no fills. One accent marker, red #e03131 or blue #1c7ed6, for the single
+  thing that matters (an underline, an arrow, a circle round a number).
+- Pictures are simple outline icons: a few confident strokes, slightly imperfect.
+- Type: Nunito 800, #1c1c1c, at most three words, like a written heading.
+- Motion: every line draws itself from one end to the other (give the path
+  pathLength="1" and stroke-dasharray: 1, tween strokeDashoffset 1 to 0), one
+  line after another as if a hand were drawing. Words pop in after their picture.
+  Afterwards the drawing tilts very slightly back and forth.
+'''
+example = '''
+```css
+#wb-board { position: absolute; inset: 0; background: #fbfbf8; }
+#wb-word { position: absolute; left: 0; top: 230px; width: 100%; text-align: center; font: 800 150px Nunito, sans-serif; color: #1c1c1c; }
+#wb-rule { position: absolute; left: 330px; top: 425px; width: 420px; height: 14px; border-radius: 7px; background: #e03131; }
+#wb-art { position: absolute; left: 140px; top: 540px; width: 800px; height: 800px; }
+#wb-art .wb-line { fill: none; stroke: #1c1c1c; stroke-width: 13; stroke-linecap: round; stroke-linejoin: round; stroke-dasharray: 1; }
+```
+```html
+<div id="wb-board" class="clip" data-start="0" data-duration="4" data-track-index="0">
+  <div id="wb-word">IDEA</div>
+  <div id="wb-rule"></div>
+  <svg id="wb-art" viewBox="0 0 800 800">
+    <circle id="wb-bulb" class="wb-line" cx="400" cy="330" r="200" pathLength="1" />
+    <path id="wb-base" class="wb-line" d="M320 515 L320 620 Q400 690 480 620 L480 515" pathLength="1" />
+    <path class="wb-line wb-ray" d="M400 90 L400 20" pathLength="1" />
+    <path class="wb-line wb-ray" d="M615 160 L670 105" pathLength="1" />
+    <path class="wb-line wb-ray" d="M185 160 L130 105" pathLength="1" />
+  </svg>
+</div>
+```
+```js
+tl.fromTo("#wb-bulb", { strokeDashoffset: 1 }, { strokeDashoffset: 0, duration: 1.1, ease: "power1.inOut" }, 0.1);
+tl.fromTo("#wb-base", { strokeDashoffset: 1 }, { strokeDashoffset: 0, duration: 0.6, ease: "power1.inOut" }, 1.1);
+tl.fromTo(".wb-ray", { strokeDashoffset: 1 }, { strokeDashoffset: 0, duration: 0.3, stagger: 0.15 }, 1.6);
+tl.fromTo("#wb-word", { opacity: 0, scale: 0.7 }, { opacity: 1, scale: 1, duration: 0.4, ease: "back.out(2)" }, 2.0);
+tl.fromTo("#wb-rule", { scaleX: 0, transformOrigin: "left center" }, { scaleX: 1, duration: 0.4, ease: "power2.out" }, 2.3);
+tl.fromTo("#wb-art", { rotation: 0 }, { rotation: 2, duration: 1.1, ease: "sine.inOut" }, 2.7);
+```
+'''

@@ -1,0 +1,53 @@
+name = "Circuit Board"
+summary = "Copper traces on dark green that light up as signals travel between chips and pads."
+direction = '''
+- Surface: dark solder-mask green (#0b2b1f).
+- Traces are paths that run only horizontally, vertically and at 45 degrees,
+  10-14px wide with round caps, in dull copper #b87333; each ends in a pad (a
+  circle with a darker hole). Components are flat rounded rectangles: black
+  chips #14161a with rows of small silver legs #c9ced6 and a pale label.
+- Light shows activity: a lit trace is bright gold #ffd166 with a glow
+  (drop-shadow 0 0 14px #ffd166); LEDs are small circles that switch from dim
+  to bright green #7cff6b or red #ff5d5d.
+- Type: JetBrains Mono 700, upper case, pale silkscreen #d7f5e3, 44-56px on or
+  beside components; one heading of at most three words.
+- Motion: signals travel. A bright copy of a trace draws along it
+  (strokeDashoffset), reaches a chip, the chip's label lights, then the next
+  trace fires. Chain three or four hops and end with LEDs blinking.
+'''
+example = '''
+```css
+#pcb-board { position: absolute; inset: 0; background: #0b2b1f; }
+#pcb-art { position: absolute; left: 0; top: 0; width: 1080px; height: 1920px; }
+#pcb-art .pcb-trace { fill: none; stroke: #b87333; stroke-width: 12; stroke-linecap: round; stroke-linejoin: round; }
+#pcb-art .pcb-live { fill: none; stroke: #ffd166; stroke-width: 12; stroke-linecap: round; stroke-linejoin: round; stroke-dasharray: 1; filter: drop-shadow(0 0 14px #ffd166); }
+#pcb-art .pcb-pad { fill: #b87333; }
+#pcb-chip { fill: #14161a; stroke: #c9ced6; stroke-width: 6; }
+#pcb-led { fill: #7cff6b; }
+#pcb-head { position: absolute; left: 90px; top: 250px; font: 700 96px "JetBrains Mono", monospace; color: #d7f5e3; }
+#pcb-label { position: absolute; left: 350px; top: 905px; width: 380px; text-align: center; font: 700 80px "JetBrains Mono", monospace; color: #d7f5e3; }
+```
+```html
+<div id="pcb-board" class="clip" data-start="0" data-duration="4" data-track-index="0">
+  <svg id="pcb-art" viewBox="0 0 1080 1920">
+    <path class="pcb-trace" d="M120 520 L120 760 L300 940 L350 940" />
+    <path class="pcb-trace" d="M730 960 L860 960 L960 1060 L960 1320" />
+    <circle class="pcb-pad" cx="120" cy="520" r="30" />
+    <circle class="pcb-pad" cx="960" cy="1320" r="30" />
+    <rect id="pcb-chip" x="350" y="820" width="380" height="280" rx="18" />
+    <path id="pcb-in" class="pcb-live" d="M120 520 L120 760 L300 940 L350 940" pathLength="1" />
+    <path id="pcb-out" class="pcb-live" d="M730 960 L860 960 L960 1060 L960 1320" pathLength="1" />
+    <circle id="pcb-led" cx="960" cy="1320" r="46" />
+  </svg>
+  <div id="pcb-head">SIGNAL IN</div>
+  <div id="pcb-label">CPU</div>
+</div>
+```
+```js
+tl.fromTo("#pcb-head", { opacity: 0, y: -30 }, { opacity: 1, y: 0, duration: 0.4, ease: "power2.out" }, 0);
+tl.fromTo("#pcb-in", { strokeDashoffset: 1 }, { strokeDashoffset: 0, duration: 1.0, ease: "power1.in" }, 0.3);
+tl.fromTo("#pcb-label", { opacity: 0.25 }, { opacity: 1, duration: 0.15, repeat: 4, yoyo: true }, 1.3);
+tl.fromTo("#pcb-out", { strokeDashoffset: 1 }, { strokeDashoffset: 0, duration: 1.0, ease: "power1.in" }, 1.7);
+tl.fromTo("#pcb-led", { opacity: 0.15, scale: 0.6, svgOrigin: "960 1320" }, { opacity: 1, scale: 1, duration: 0.2, repeat: 6, yoyo: true }, 2.7);
+```
+'''

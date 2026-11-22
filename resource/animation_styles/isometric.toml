@@ -1,0 +1,59 @@
+name = "Isometric Infographic"
+summary = "Little isometric blocks and platforms in soft colours that stack and connect to explain a process."
+direction = '''
+- Surface: a soft flat background (#eef2f7 or #f7f3ec).
+- Objects are isometric solids drawn as inline SVG polygons with three faces:
+  top lightest, left mid, right darkest of one hue. Use 30-degree axes: move 2
+  across for 1 down. Hues: blue #4c7df0, teal #2bb3a3, coral #f2695c, amber
+  #f5b63f; give each face a tint of its hue by hand.
+- Build small scenes from cubes, slabs, cylinders approximated by stacks,
+  conveyor strips and thin dotted connector paths between platforms. Add a
+  flat soft ground shadow (rgba(0,0,0,0.12) ellipse or rhombus) under objects.
+- Type: Poppins 700, dark slate #1f2a44, at most three words, set flat above.
+- Motion: blocks drop into place one after another with a small bounce,
+  connectors draw, a token travels along a path from one platform to the next.
+  Then blocks keep bobbing a few pixels.
+'''
+example = '''
+```css
+#iso-page { position: absolute; inset: 0; background: #eef2f7; }
+#iso-word { position: absolute; left: 0; top: 260px; width: 100%; text-align: center; font: 700 120px Poppins, sans-serif; color: #1f2a44; }
+#iso-art { position: absolute; left: 40px; top: 480px; width: 1000px; height: 900px; }
+#iso-path { fill: none; stroke: #1f2a44; stroke-width: 6; stroke-dasharray: 0.02 0.03; }
+```
+```html
+<div id="iso-page" class="clip" data-start="0" data-duration="4" data-track-index="0">
+  <div id="iso-word">STACK UP</div>
+  <svg id="iso-art" viewBox="0 0 1000 900">
+    <polygon points="500,640 860,820 500,1000 140,820" fill="#000000" fill-opacity="0.1" transform="translate(0 -190)" />
+    <g id="iso-a">
+      <polygon points="500,560 740,680 500,800 260,680" fill="#7fa2f7" />
+      <polygon points="260,680 500,800 500,880 260,760" fill="#4c7df0" />
+      <polygon points="740,680 500,800 500,880 740,760" fill="#2f5bd0" />
+    </g>
+    <g id="iso-b">
+      <polygon points="500,420 700,520 500,620 300,520" fill="#63cfc2" />
+      <polygon points="300,520 500,620 500,720 300,620" fill="#2bb3a3" />
+      <polygon points="700,520 500,620 500,720 700,620" fill="#1c8a7d" />
+    </g>
+    <g id="iso-c">
+      <polygon points="500,250 660,330 500,410 340,330" fill="#f79a90" />
+      <polygon points="340,330 500,410 500,560 340,480" fill="#f2695c" />
+      <polygon points="660,330 500,410 500,560 660,480" fill="#cf4a3e" />
+    </g>
+    <path id="iso-path" d="M760 640 L900 570 L900 300" pathLength="1" />
+    <circle id="iso-token" cx="900" cy="300" r="34" fill="#f5b63f" />
+  </svg>
+</div>
+```
+```js
+tl.fromTo("#iso-a", { y: -700, opacity: 0 }, { y: 0, opacity: 1, duration: 0.6, ease: "bounce.out" }, 0.1);
+tl.fromTo("#iso-b", { y: -700, opacity: 0 }, { y: 0, opacity: 1, duration: 0.6, ease: "bounce.out" }, 0.6);
+tl.fromTo("#iso-c", { y: -700, opacity: 0 }, { y: 0, opacity: 1, duration: 0.6, ease: "bounce.out" }, 1.1);
+tl.fromTo("#iso-word", { opacity: 0, y: 30 }, { opacity: 1, y: 0, duration: 0.4, ease: "power2.out" }, 1.4);
+tl.fromTo("#iso-path", { opacity: 0 }, { opacity: 1, duration: 0.4 }, 1.6);
+tl.fromTo("#iso-token", { scale: 0, svgOrigin: "900 300" }, { scale: 1, duration: 0.3, ease: "back.out(2)" }, 1.8);
+tl.fromTo("#iso-token", { y: 0 }, { y: 270, duration: 1.0, ease: "power1.inOut" }, 2.1);
+tl.fromTo("#iso-c", { y: 0 }, { y: -24, duration: 0.5, ease: "sine.inOut", yoyo: true, repeat: 3 }, 1.8);
+```
+'''

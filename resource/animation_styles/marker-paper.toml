@@ -1,0 +1,46 @@
+name = "Marker on Paper"
+summary = "Thick coloured felt-tip strokes on white paper, loose and bright like a quick sketch."
+direction = '''
+- Surface: white paper (#fefefe).
+- Draw with thick felt-tip strokes 26-40px wide, round caps, in three or four
+  marker colours: blue #2563eb, green #16a34a, orange #f97316, magenta #db2777.
+  Colours are slightly see-through (opacity 0.85) and may overlap. Thin black
+  fineliner (#111111, 8px) adds only a few details on top.
+- Shapes are loose: scribbled fills made from a zigzag stroke, wobbly circles,
+  broad arrows. Big and few.
+- Type: Archivo Black, #111111, at most three words.
+- Motion: each stroke is laid down along its path (strokeDashoffset 1 to 0),
+  fast and confident, broad strokes first and fineliner last. After that the
+  sheet drifts or a shape keeps wobbling.
+'''
+example = '''
+```css
+#mp-paper { position: absolute; inset: 0; background: #fefefe; }
+#mp-word { position: absolute; left: 0; top: 250px; width: 100%; text-align: center; font: 400 150px "Archivo Black", sans-serif; color: #111111; }
+#mp-art { position: absolute; left: 90px; top: 520px; width: 900px; height: 850px; }
+#mp-art path { fill: none; stroke-linecap: round; stroke-linejoin: round; stroke-dasharray: 1; opacity: 0.85; }
+#mp-sun { stroke: #f97316; stroke-width: 38; }
+#mp-hill { stroke: #16a34a; stroke-width: 40; }
+#mp-sky { stroke: #2563eb; stroke-width: 30; }
+#mp-art #mp-ink { stroke: #111111; stroke-width: 8; opacity: 1; }
+```
+```html
+<div id="mp-paper" class="clip" data-start="0" data-duration="4" data-track-index="0">
+  <div id="mp-word">GO!</div>
+  <svg id="mp-art" viewBox="0 0 900 850">
+    <path id="mp-sky" d="M60 120 L840 90 M70 200 L830 180" pathLength="1" />
+    <path id="mp-sun" d="M560 330 q60 -70 120 0 q60 70 0 130 q-70 60 -130 0 q-50 -60 10 -130 M600 380 l50 40" pathLength="1" />
+    <path id="mp-hill" d="M40 760 L160 600 L250 740 L360 520 L470 750 L600 580 L700 760 L860 640" pathLength="1" />
+    <path id="mp-ink" d="M360 520 L360 400 L440 430 L360 460" pathLength="1" />
+  </svg>
+</div>
+```
+```js
+tl.fromTo("#mp-sky", { strokeDashoffset: 1 }, { strokeDashoffset: 0, duration: 0.7, ease: "power1.out" }, 0.1);
+tl.fromTo("#mp-hill", { strokeDashoffset: 1 }, { strokeDashoffset: 0, duration: 1.0, ease: "power1.inOut" }, 0.6);
+tl.fromTo("#mp-sun", { strokeDashoffset: 1 }, { strokeDashoffset: 0, duration: 0.8, ease: "power1.inOut" }, 1.4);
+tl.fromTo("#mp-ink", { strokeDashoffset: 1 }, { strokeDashoffset: 0, duration: 0.5 }, 2.1);
+tl.fromTo("#mp-word", { opacity: 0, y: -60 }, { opacity: 1, y: 0, duration: 0.4, ease: "back.out(2)" }, 2.4);
+tl.fromTo("#mp-art", { rotation: 0, y: 0 }, { rotation: -2, y: -30, duration: 1.0, ease: "sine.inOut" }, 2.8);
+```
+'''

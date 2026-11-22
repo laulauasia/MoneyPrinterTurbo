@@ -6689,6 +6689,7 @@ def _render_video_settings(panel, params):
                 _render_openrouter_video_settings(params)
             if params.video_source == "claude_animation":
                 st.info(tr("Claude Code Animation Notice"))
+                _render_claude_animation_video_settings(params)
             if params.video_source == "metaso_minimax":
                 _render_metaso_minimax_video_settings(params)
             if params.video_source == "muapi":
@@ -6737,6 +6738,27 @@ def _render_wavespeed_video_settings(params):
         key="wavespeed_confirm_charge",
         help=tr("Confirm WaveSpeed Charge Help"),
     )
+
+
+def _render_claude_animation_video_settings(params):
+    """Let this video pick its own animation style; empty keeps the saved default."""
+    styles = {style.slug: style for style in animation_styles.list_styles()}
+    default_style = claude_animation.style_preset(config.app)
+    default_label = tr("Claude Code Animation Video Style Default").format(
+        style=default_style.name if default_style else tr("Claude Code Animation Preset None")
+    )
+    selected_style = stable_selectbox(
+        tr("Claude Code Animation Video Style"),
+        options=["", *styles],
+        default_value="",
+        key="claude_animation_video_style",
+        format_func=lambda slug: styles[slug].name if slug else default_label,
+        help=tr("Claude Code Animation Video Style Help"),
+    )
+    params.animation_style = selected_style if selected_style in styles else ""
+    shown_style = styles.get(params.animation_style) or default_style
+    if shown_style is not None and shown_style.summary:
+        st.caption(shown_style.summary)
 
 
 def _render_seedance_video_settings(params):

@@ -175,9 +175,12 @@ claude_animation_model = ""
 claude_animation_cli_path = ""
 claude_animation_hyperframes_path = ""
 # Named style applied to every scene: the file name (without .toml) of a style in
-# resource/animation_styles, e.g. "flat-vector", "kinetic-type", "paper-cutout"
-# or "data-ink". Add your own as storage/animation_styles/<name>.toml with
-# name, summary, direction and an optional example scene. Empty = no preset.
+# resource/animation_styles, e.g. "flat-vector", "whiteboard", "swiss-grid",
+# "blueprint", "neon-tubes" or "ink-wash" (26 are built in). Add your own as
+# storage/animation_styles/<name>.toml with name, summary, direction and an
+# optional example scene. Empty = no preset. This is the default: a video can
+# pick its own style in the WebUI's Video Settings, or with "animation_style"
+# in an API request.
 claude_animation_style_preset = ""
 # Optional extra art direction added on top of the preset, e.g. "navy and amber".
 claude_animation_style = ""

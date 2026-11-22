@@ -1,0 +1,44 @@
+name = "Stick Figure"
+summary = "Simple stick people acting out the idea on a plain page. Light and funny."
+direction = '''
+- Surface: plain white (#ffffff) or very light grey; a single ground line.
+- Characters are stick figures: a round head (circle outline), straight body,
+  arm and leg lines, all #222222 strokes 12px with round caps. Faces are two
+  dots at most. No clothes, no detail.
+- Props are equally simple outlines. One flat accent colour (#ff6b35) marks the
+  object or number the scene is about.
+- Type: Nunito 800, #222222, at most three words, often as a short caption.
+- Motion: act it out. Figures walk in, wave, jump, point or shrug by rotating
+  limbs around their joints (set svgOrigin at the shoulder or hip) and bouncing
+  the whole figure. Keep one figure moving for the whole scene.
+'''
+example = '''
+```css
+#sf-page { position: absolute; inset: 0; background: #ffffff; }
+#sf-word { position: absolute; left: 0; top: 250px; width: 100%; text-align: center; font: 800 140px Nunito, sans-serif; color: #222222; }
+#sf-art { position: absolute; left: 0; top: 500px; width: 1080px; height: 900px; }
+#sf-art .sf-line { fill: none; stroke: #222222; stroke-width: 13; stroke-linecap: round; }
+#sf-coin { fill: #ff6b35; }
+```
+```html
+<div id="sf-page" class="clip" data-start="0" data-duration="4" data-track-index="0">
+  <div id="sf-word">GOT IT!</div>
+  <svg id="sf-art" viewBox="0 0 1080 900">
+    <path class="sf-line" d="M120 800 L960 800" />
+    <g id="sf-man">
+      <circle class="sf-line" cx="440" cy="330" r="70" />
+      <path class="sf-line" d="M440 400 L440 620 M440 620 L370 800 M440 620 L510 800 M440 460 L350 560" />
+      <path id="sf-arm" class="sf-line" d="M440 460 L560 380" />
+    </g>
+    <circle id="sf-coin" cx="760" cy="160" r="60" />
+  </svg>
+</div>
+```
+```js
+tl.fromTo("#sf-man", { x: -520 }, { x: 0, duration: 0.9, ease: "power2.out" }, 0);
+tl.fromTo("#sf-coin", { y: -420 }, { y: 180, duration: 0.8, ease: "bounce.out" }, 0.7);
+tl.fromTo("#sf-arm", { rotation: 0, svgOrigin: "440 460" }, { rotation: -35, duration: 0.3, ease: "power2.out" }, 1.4);
+tl.fromTo("#sf-word", { opacity: 0, scale: 0.6 }, { opacity: 1, scale: 1, duration: 0.4, ease: "back.out(2.2)" }, 1.6);
+tl.fromTo("#sf-man", { y: 0 }, { y: -70, duration: 0.3, ease: "power2.out", yoyo: true, repeat: 5 }, 2.0);
+```
+'''

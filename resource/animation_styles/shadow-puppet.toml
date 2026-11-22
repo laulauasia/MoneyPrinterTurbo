@@ -1,0 +1,55 @@
+name = "Shadow Puppet"
+summary = "Dark jointed silhouettes behind a glowing amber screen, moving on rods like a puppet play."
+direction = '''
+- Surface: a backlit cloth screen: a radial gradient from warm light #ffd98a
+  in the middle to deep amber #c9731f at the edges, with a dark vignette frame.
+- Figures are flat silhouettes in near-black brown (#2a1408), built from
+  separate parts joined at pivots (head, body, upper and lower limbs) and
+  pierced with small cut-out holes (circles, slits, petals) that let the amber
+  through. Thin straight rods (6px, same dark colour) may hang from hands.
+- Scenery is the same silhouette language: a tree, a pavilion roof, a moon as
+  a pale disc (#fff3cf), hills along the bottom edge.
+- Type: Playfair Display 700, dark brown on the light part of the screen, at
+  most three words.
+- Motion: puppet theatre. Parts rotate stiffly around their joints (set
+  svgOrigin at the pivot), figures slide in from the sides and bob slightly,
+  never squash or stretch. The light flickers very gently.
+'''
+example = '''
+```css
+#sp-screen { position: absolute; inset: 0; background: radial-gradient(circle at 50% 46%, #ffd98a 0%, #f0a94a 45%, #c9731f 78%, #5a2c0c 100%); }
+#sp-art { position: absolute; left: 0; top: 0; width: 1080px; height: 1920px; }
+#sp-art .sp-dark { fill: #2a1408; }
+#sp-art .sp-hole { fill: #f0a94a; }
+#sp-art .sp-rod { fill: none; stroke: #2a1408; stroke-width: 7; }
+#sp-moon { fill: #fff3cf; }
+#sp-word { position: absolute; left: 0; top: 300px; width: 100%; text-align: center; font: 700 120px "Playfair Display", serif; color: #2a1408; letter-spacing: 6px; }
+```
+```html
+<div id="sp-screen" class="clip" data-start="0" data-duration="4" data-track-index="0">
+  <svg id="sp-art" viewBox="0 0 1080 1920">
+    <circle id="sp-moon" cx="800" cy="640" r="110" />
+    <path class="sp-dark" d="M0 1420 Q270 1300 540 1400 T1080 1360 L1080 1920 L0 1920 Z" />
+    <g id="sp-hero">
+      <circle class="sp-dark" cx="430" cy="820" r="70" />
+      <circle class="sp-hole" cx="452" cy="806" r="12" />
+      <path class="sp-dark" d="M370 900 L490 900 L530 1220 L330 1220 Z" />
+      <circle class="sp-hole" cx="430" cy="1000" r="16" /><circle class="sp-hole" cx="430" cy="1070" r="16" /><circle class="sp-hole" cx="430" cy="1140" r="16" />
+      <path class="sp-dark" d="M350 1220 L420 1220 L410 1400 L350 1400 Z M450 1220 L520 1220 L520 1400 L460 1400 Z" />
+      <g id="sp-arm">
+        <path class="sp-dark" d="M470 920 L680 800 L700 840 L490 970 Z" />
+        <path class="sp-rod" d="M690 820 L720 1500" />
+      </g>
+    </g>
+  </svg>
+  <div id="sp-word">LONG AGO</div>
+</div>
+```
+```js
+tl.fromTo("#sp-hero", { x: -700 }, { x: 0, duration: 1.2, ease: "power1.out" }, 0);
+tl.fromTo("#sp-moon", { y: 300, opacity: 0 }, { y: 0, opacity: 1, duration: 1.4, ease: "power1.out" }, 0.2);
+tl.fromTo("#sp-word", { opacity: 0 }, { opacity: 1, duration: 0.8 }, 1.0);
+tl.fromTo("#sp-arm", { rotation: 20, svgOrigin: "480 940" }, { rotation: -25, duration: 0.7, ease: "sine.inOut", yoyo: true, repeat: 3 }, 1.1);
+tl.fromTo("#sp-hero", { y: 0 }, { y: -16, duration: 0.45, ease: "sine.inOut", yoyo: true, repeat: 5 }, 1.2);
+```
+'''

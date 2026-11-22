@@ -1,0 +1,51 @@
+name = "Pictogram Motion"
+summary = "Signage-style pictogram people and icons, one colour on a flat ground. Clear like an airport sign."
+direction = '''
+- Surface: one flat signage colour: deep blue #003f88, green #00693e or
+  yellow #ffcc00 (then draw in black). One colour per scene.
+- Figures are pictograms: a round head that does not touch the body, a body of
+  rounded bars for torso, arms and legs, all one solid fill (white #ffffff, or
+  #111111 on yellow). No faces, no outlines, no detail. Objects are reduced
+  the same way: a house is a square and a triangle.
+- Compose like a sign: centred, large, with wide margins, optionally inside a
+  rounded square or circle border 24px thick.
+- Type: Inter 900, upper case, same colour as the pictogram, at most two words.
+- Motion: pictograms move like signs come alive: limbs swing from the joint in
+  steps, the figure walks across, an arrow slides and points. Use steps or
+  power2.inOut; keep the figure moving until the end.
+'''
+example = '''
+```css
+#pg-sign { position: absolute; inset: 0; background: #003f88; }
+#pg-frame { position: absolute; left: 140px; top: 520px; width: 800px; height: 800px; border: 26px solid #ffffff; border-radius: 90px; }
+#pg-art { position: absolute; left: 140px; top: 520px; width: 800px; height: 800px; }
+#pg-art .pg-part { fill: #ffffff; }
+#pg-art .pg-limb { fill: none; stroke: #ffffff; stroke-width: 62; stroke-linecap: round; }
+#pg-word { position: absolute; left: 0; top: 270px; width: 100%; text-align: center; font: 900 150px Inter, sans-serif; color: #ffffff; letter-spacing: 6px; }
+```
+```html
+<div id="pg-sign" class="clip" data-start="0" data-duration="4" data-track-index="0">
+  <div id="pg-frame"></div>
+  <svg id="pg-art" viewBox="0 0 800 800">
+    <g id="pg-man">
+      <circle class="pg-part" cx="400" cy="170" r="62" />
+      <path class="pg-limb" d="M400 290 L400 470" />
+      <path id="pg-arm1" class="pg-limb" d="M400 300 L310 420" />
+      <path id="pg-arm2" class="pg-limb" d="M400 300 L490 420" />
+      <path id="pg-leg1" class="pg-limb" d="M400 470 L330 660" />
+      <path id="pg-leg2" class="pg-limb" d="M400 470 L470 660" />
+    </g>
+  </svg>
+  <div id="pg-word">WALK</div>
+</div>
+```
+```js
+tl.fromTo("#pg-frame", { scale: 0.6, opacity: 0 }, { scale: 1, opacity: 1, duration: 0.5, ease: "power2.out" }, 0);
+tl.fromTo("#pg-word", { opacity: 0, y: -40 }, { opacity: 1, y: 0, duration: 0.4, ease: "power2.out" }, 0.3);
+tl.fromTo("#pg-man", { x: -140 }, { x: 140, duration: 3.4, ease: "none" }, 0.4);
+tl.fromTo("#pg-leg1", { rotation: 22, svgOrigin: "400 470" }, { rotation: -22, duration: 0.42, ease: "sine.inOut", yoyo: true, repeat: 7 }, 0.4);
+tl.fromTo("#pg-leg2", { rotation: -22, svgOrigin: "400 470" }, { rotation: 22, duration: 0.42, ease: "sine.inOut", yoyo: true, repeat: 7 }, 0.4);
+tl.fromTo("#pg-arm1", { rotation: -20, svgOrigin: "400 300" }, { rotation: 20, duration: 0.42, ease: "sine.inOut", yoyo: true, repeat: 7 }, 0.4);
+tl.fromTo("#pg-arm2", { rotation: 20, svgOrigin: "400 300" }, { rotation: -20, duration: 0.42, ease: "sine.inOut", yoyo: true, repeat: 7 }, 0.4);
+```
+'''

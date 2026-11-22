@@ -1,0 +1,49 @@
+name = "Red Paper-cut"
+summary = "Chinese window paper-cut: one sheet of red paper with cut-out patterns on a warm cream ground."
+direction = '''
+- Surface: warm cream paper (#f7ecd4) or a gold-tinted cream; nothing else.
+- Everything is cut from one colour of paper: festival red #c8102e. Detail is
+  made by cutting holes that show the cream through: rows of small crescents,
+  petals, dots, sawtooth edges and scallops. No outlines, no second colour
+  except a little gold #d9a441 for a seal or a sun.
+- Shapes are flat, symmetrical and connected, as if still one sheet: round
+  medallions, a scalloped border ring, clouds as spirals, plants and animals as
+  bold silhouettes with patterned insides.
+- Type: Noto Sans JP 900 or Playfair Display 700 in red on cream (or cream on a
+  red medallion), at most three words or one big character.
+- Motion: paper behaviour: pieces unfold from a centre fold (scaleX from 0 on
+  the centre line), rotate into place like a snowflake opening, or flutter down.
+  Afterwards the medallion turns slowly and pieces sway a few degrees.
+'''
+example = '''
+```css
+#rp-page { position: absolute; inset: 0; background: #f7ecd4; }
+#rp-art { position: absolute; left: 90px; top: 520px; width: 900px; height: 900px; }
+#rp-art .rp-red { fill: #c8102e; }
+#rp-art .rp-cut { fill: #f7ecd4; }
+#rp-seal { fill: #d9a441; }
+#rp-word { position: absolute; left: 0; top: 270px; width: 100%; text-align: center; font: 700 130px "Playfair Display", serif; color: #c8102e; letter-spacing: 8px; }
+```
+```html
+<div id="rp-page" class="clip" data-start="0" data-duration="4" data-track-index="0">
+  <div id="rp-word">FORTUNE</div>
+  <svg id="rp-art" viewBox="0 0 900 900">
+    <g id="rp-wheel">
+      <circle class="rp-red" cx="450" cy="450" r="420" />
+      <g class="rp-cut">
+        <circle cx="450" cy="95" r="34" /><circle cx="701" cy="199" r="34" /><circle cx="805" cy="450" r="34" /><circle cx="701" cy="701" r="34" />
+        <circle cx="450" cy="805" r="34" /><circle cx="199" cy="701" r="34" /><circle cx="95" cy="450" r="34" /><circle cx="199" cy="199" r="34" />
+        <path d="M450 180 Q520 310 450 400 Q380 310 450 180 Z M720 450 Q590 520 500 450 Q590 380 720 450 Z M450 720 Q380 590 450 500 Q520 590 450 720 Z M180 450 Q310 380 400 450 Q310 520 180 450 Z" />
+      </g>
+    </g>
+    <circle id="rp-seal" cx="450" cy="450" r="46" />
+  </svg>
+</div>
+```
+```js
+tl.fromTo("#rp-wheel", { scaleX: 0, svgOrigin: "450 450" }, { scaleX: 1, duration: 0.8, ease: "power2.out" }, 0.1);
+tl.fromTo("#rp-seal", { scale: 0, svgOrigin: "450 450" }, { scale: 1, duration: 0.4, ease: "back.out(2)" }, 0.8);
+tl.fromTo("#rp-word", { opacity: 0, y: 40 }, { opacity: 1, y: 0, duration: 0.6, ease: "power2.out" }, 0.9);
+tl.fromTo("#rp-wheel", { rotation: 0, svgOrigin: "450 450" }, { rotation: 45, duration: 2.9, ease: "sine.inOut" }, 0.95);
+```
+'''

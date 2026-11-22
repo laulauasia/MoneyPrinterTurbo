@@ -1,0 +1,45 @@
+name = "Art Deco"
+summary = "Gold lines on deep navy: sunbursts, fans and stepped frames. 1920s luxury."
+direction = '''
+- Surface: deep navy (#0d1b2a) or black-green (#0b2b26).
+- Palette: metallic gold drawn as flat #d4af37 with a lighter #f1d27a for
+  highlights; cream #f5ecd6 for type. Nothing else.
+- Ornament is symmetrical and geometric: sunburst rays from a centre, fan and
+  scallop shapes, stepped ziggurat frames, chevrons, thin double lines (4px and
+  8px) around the content. Compose on the vertical centre line.
+- Type: Playfair Display 700, upper case, wide letter-spacing (10-16px), cream
+  or gold, centred, at most three words.
+- Motion: elegant and symmetrical. Rays fan out from the centre, frame lines
+  draw from the middle outwards on both sides at once, type rises with a slow
+  fade. power2.inOut, nothing bouncy. Afterwards the sunburst turns slowly.
+'''
+example = '''
+```css
+#ad-page { position: absolute; inset: 0; background: #0d1b2a; }
+#ad-art { position: absolute; left: 0; top: 0; width: 1080px; height: 1920px; }
+#ad-art .ad-line { fill: none; stroke: #d4af37; stroke-width: 6; stroke-dasharray: 1; }
+#ad-art .ad-ray { stroke: #f1d27a; stroke-width: 8; stroke-linecap: square; }
+#ad-word { position: absolute; left: 0; top: 330px; width: 100%; text-align: center; font: 700 110px "Playfair Display", serif; color: #f5ecd6; letter-spacing: 14px; }
+#ad-core { fill: #d4af37; }
+```
+```html
+<div id="ad-page" class="clip" data-start="0" data-duration="4" data-track-index="0">
+  <svg id="ad-art" viewBox="0 0 1080 1920">
+    <rect class="ad-line" x="70" y="170" width="940" height="1250" pathLength="1" />
+    <rect class="ad-line" x="100" y="200" width="880" height="1190" pathLength="1" />
+    <g id="ad-burst">
+      <path class="ad-ray" d="M540 960 L540 640 M540 960 L700 683 M540 960 L817 800 M540 960 L860 960 M540 960 L817 1120 M540 960 L700 1237 M540 960 L540 1280 M540 960 L380 1237 M540 960 L263 1120 M540 960 L220 960 M540 960 L263 800 M540 960 L380 683" />
+    </g>
+    <circle id="ad-core" cx="540" cy="960" r="90" />
+  </svg>
+  <div id="ad-word">GOLDEN AGE</div>
+</div>
+```
+```js
+tl.fromTo(".ad-line", { strokeDashoffset: 1 }, { strokeDashoffset: 0, duration: 1.2, ease: "power2.inOut", stagger: 0.2 }, 0);
+tl.fromTo("#ad-core", { scale: 0, svgOrigin: "540 960" }, { scale: 1, duration: 0.6, ease: "power2.out" }, 0.4);
+tl.fromTo("#ad-burst", { scale: 0, svgOrigin: "540 960" }, { scale: 1, duration: 1.0, ease: "power2.inOut" }, 0.6);
+tl.fromTo("#ad-word", { opacity: 0, y: 40 }, { opacity: 1, y: 0, duration: 0.8, ease: "power2.out" }, 1.2);
+tl.fromTo("#ad-burst", { rotation: 0, svgOrigin: "540 960" }, { rotation: 30, duration: 2.2, ease: "none" }, 1.6);
+```
+'''

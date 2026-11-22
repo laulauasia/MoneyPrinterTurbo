@@ -1,0 +1,54 @@
+name = "Woodcut Print"
+summary = "Bold black ink on rough paper with carved white lines and rays. Heavy, dramatic and handmade."
+direction = '''
+- Surface: rough off-white paper (#efe6d2).
+- Ink: one black (#17130f), optionally one flat second block in ox-blood red
+  #9b2226 or ochre #c98a1b. Large solid black masses are the base; detail is
+  carved out of them as paper-coloured lines: parallel hatching, radiating
+  sun rays, wavy water lines, wedge-shaped gouge marks. No greys, no gradients.
+- Edges are rough: add an inline SVG filter (feTurbulence + feDisplacementMap,
+  scale 6-10) to the ink group so outlines wobble like cut wood.
+- Composition is bold and frontal: a big sun or moon disc, mountains, waves,
+  figures as solid shapes, a thick black border round the whole image.
+- Type: League Gothic or Oswald 700, upper case, black, at most three words.
+- Motion: slow and weighty. Blocks stamp down (scale from 1.1 with a quick
+  fade), rays turn slowly behind the subject, carved lines appear in a wipe.
+'''
+example = '''
+```css
+#wc-paper { position: absolute; inset: 0; background: #efe6d2; }
+#wc-art { position: absolute; left: 0; top: 0; width: 1080px; height: 1920px; }
+#wc-art .wc-ink { fill: #17130f; }
+#wc-art .wc-cut { fill: none; stroke: #efe6d2; stroke-width: 12; stroke-linecap: round; }
+#wc-sun { fill: #9b2226; }
+#wc-frame { fill: none; stroke: #17130f; stroke-width: 26; }
+#wc-word { position: absolute; left: 0; top: 250px; width: 100%; text-align: center; font: 400 200px "League Gothic", sans-serif; color: #17130f; letter-spacing: 8px; }
+```
+```html
+<div id="wc-paper" class="clip" data-start="0" data-duration="4" data-track-index="0">
+  <svg id="wc-art" viewBox="0 0 1080 1920">
+    <filter id="wc-rough"><feTurbulence type="fractalNoise" baseFrequency="0.03" numOctaves="2" seed="7" /><feDisplacementMap in="SourceGraphic" scale="9" /></filter>
+    <g filter="url(#wc-rough)">
+      <rect id="wc-frame" x="80" y="500" width="920" height="920" />
+      <g id="wc-rays">
+        <path class="wc-ink" d="M540 880 L500 520 L580 520 Z M540 880 L800 600 L850 660 Z M540 880 L920 840 L920 920 Z M540 880 L160 840 L160 920 Z M540 880 L230 660 L280 600 Z" />
+      </g>
+      <circle id="wc-sun" cx="540" cy="880" r="150" />
+      <g id="wc-hill">
+        <path class="wc-ink" d="M93 1407 L93 1180 L330 960 L500 1150 L700 900 L987 1200 L987 1407 Z" />
+        <path class="wc-cut" d="M330 1010 L250 1160 M330 1010 L400 1170 M700 950 L610 1150 M700 950 L790 1160 M700 950 L700 1180" />
+      </g>
+    </g>
+  </svg>
+  <div id="wc-word">RISE</div>
+</div>
+```
+```js
+tl.fromTo("#wc-frame", { opacity: 0 }, { opacity: 1, duration: 0.3 }, 0);
+tl.fromTo("#wc-hill", { opacity: 0, scale: 1.08, svgOrigin: "540 1180" }, { opacity: 1, scale: 1, duration: 0.35, ease: "power3.in" }, 0.3);
+tl.fromTo("#wc-sun", { y: 420 }, { y: 0, duration: 1.4, ease: "power2.out" }, 0.6);
+tl.fromTo("#wc-rays", { opacity: 0 }, { opacity: 1, duration: 0.5 }, 1.2);
+tl.fromTo("#wc-rays", { rotation: -10, svgOrigin: "540 880" }, { rotation: 14, duration: 2.6, ease: "sine.inOut" }, 1.2);
+tl.fromTo("#wc-word", { opacity: 0, scale: 1.15 }, { opacity: 1, scale: 1, duration: 0.3, ease: "power3.in" }, 1.6);
+```
+'''

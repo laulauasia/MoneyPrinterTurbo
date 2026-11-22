@@ -1,0 +1,58 @@
+name = "Ukiyo-e"
+summary = "Japanese woodblock print: flat indigo, vermilion and cream with fine dark outlines, waves and a red sun."
+direction = '''
+- Surface: aged cream paper (#f2e6c9), with a soft band of colour fading down
+  from the top edge (a linear gradient of indigo #1f3a5f to transparent over the top 200px,
+  the printmaker's bokashi; keep type below it), the only gradient allowed.
+- Palette: Prussian indigo #1f3a5f, pale blue #7ba7bc, vermilion #d1372d,
+  ochre #d9a441, pine green #4a6b4f, all flat. Every shape has a fine dark
+  outline (#22252b, 4-5px) of even weight.
+- Subjects are stylised nature: a flat red sun disc, a mountain as a simple
+  cone with a pale cap, waves built from repeated curls and claw-like foam,
+  clouds as long horizontal bands with rounded ends, pines, boats.
+- Compose in flat layers, far to near, with large calm areas of paper. Add a
+  small vertical cartouche (a red or cream rectangle with a dark outline).
+- Type: Playfair Display 700 or Noto Sans JP 700, indigo, at most three
+  words, optionally inside the cartouche.
+- Motion: layers slide sideways at different speeds like sliding screens;
+  waves rock; the sun rises slowly. Gentle sine eases, no bounce.
+'''
+example = '''
+```css
+#uk-paper { position: absolute; inset: 0; background: linear-gradient(180deg, #1f3a5f 0%, rgba(31,58,95,0) 11%), #f2e6c9; }
+#uk-art { position: absolute; left: 0; top: 0; width: 1080px; height: 1920px; }
+#uk-art .uk-line { stroke: #22252b; stroke-width: 5; stroke-linejoin: round; }
+#uk-sun { fill: #d1372d; }
+#uk-fuji { fill: #1f3a5f; }
+#uk-cap { fill: #f2e6c9; }
+#uk-wave { fill: #7ba7bc; }
+#uk-foam { fill: #f2e6c9; }
+#uk-tag { position: absolute; left: 110px; top: 470px; width: 150px; height: 420px; background: #d1372d; border: 5px solid #22252b; }
+#uk-word { position: absolute; left: 0; top: 280px; width: 100%; text-align: center; font: 700 120px "Playfair Display", serif; color: #1f3a5f; letter-spacing: 6px; }
+```
+```html
+<div id="uk-paper" class="clip" data-start="0" data-duration="4" data-track-index="0">
+  <svg id="uk-art" viewBox="0 0 1080 1920">
+    <circle id="uk-sun" class="uk-line" cx="720" cy="700" r="150" />
+    <g id="uk-mount">
+      <path id="uk-fuji" class="uk-line" d="M150 1300 L470 760 Q540 730 610 760 L930 1300 Z" />
+      <path id="uk-cap" class="uk-line" d="M470 760 Q540 730 610 760 L680 880 L620 850 L575 905 L540 850 L500 905 L455 850 L400 880 Z" />
+    </g>
+    <g id="uk-sea">
+      <path id="uk-wave" class="uk-line" d="M-200 1380 Q-80 1250 40 1380 T280 1380 T520 1380 T760 1380 T1000 1380 T1240 1380 L1240 1920 L-200 1920 Z" />
+      <path id="uk-foam" class="uk-line" d="M-200 1380 Q-80 1250 40 1380 Q-80 1330 -200 1380 Z M280 1380 Q400 1250 520 1380 Q400 1330 280 1380 Z M760 1380 Q880 1250 1000 1380 Q880 1330 760 1380 Z" />
+    </g>
+  </svg>
+  <div id="uk-tag"></div>
+  <div id="uk-word">THE WAVE</div>
+</div>
+```
+```js
+tl.fromTo("#uk-sun", { y: 520 }, { y: 0, duration: 3.6, ease: "sine.out" }, 0);
+tl.fromTo("#uk-mount", { x: 260 }, { x: 0, duration: 1.8, ease: "sine.out" }, 0);
+tl.fromTo("#uk-sea", { x: 0 }, { x: 180, duration: 3.9, ease: "sine.inOut" }, 0);
+tl.fromTo("#uk-sea", { y: 0 }, { y: 26, duration: 0.95, ease: "sine.inOut", yoyo: true, repeat: 3 }, 0);
+tl.fromTo("#uk-tag", { scaleY: 0, transformOrigin: "center top" }, { scaleY: 1, duration: 0.6, ease: "power2.out" }, 0.8);
+tl.fromTo("#uk-word", { opacity: 0 }, { opacity: 1, duration: 0.8 }, 1.0);
+```
+'''

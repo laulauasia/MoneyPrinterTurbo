@@ -120,6 +120,14 @@ class TestClaudeAnimation(unittest.TestCase):
         self.assertEqual(claude_command[claude_command.index("--tools") + 1], "")
         self.assertIn("--safe-mode", claude_command)
 
+    def test_scene_prompt_carries_the_style_chosen_for_the_video(self):
+        tools = _FakeTools([_claude_reply(GOOD_REPLY)])
+
+        item = self._generate(tools, style_slug="chalkboard")
+
+        self.assertIn("Style: Chalkboard", tools.prompts[0])
+        self.assertEqual(item.source_info["style"], "chalkboard")
+
     def test_same_request_reuses_the_cached_scene_without_asking_claude(self):
         first = self._generate(_FakeTools([_claude_reply(GOOD_REPLY)]))
         tools = _FakeTools([])
@@ -527,12 +535,25 @@ class TestAnimationStyles(unittest.TestCase):
     def test_every_built_in_example_is_a_valid_scene(self):
         styles = animation_styles.list_styles()
 
-        self.assertGreaterEqual(len(styles), 4)
+        self.assertGreaterEqual(len(styles), 26)
+        self.assertEqual(len({style.name for style in styles}), len(styles))
         for style in styles:
             with self.subTest(style=style.slug):
                 self.assertTrue(style.summary)
+                # A file longer than the limits would be cut off mid-sentence.
+                self.assertLess(len(style.direction), animation_styles.MAX_DIRECTION_LENGTH)
+                self.assertTrue(style.example.endswith("```"))
                 blocks = claude_animation.parse_scene(style.example)
                 self.assertIn('class="clip"', blocks["html"])
+                self.assertIn('data-duration="4"', blocks["html"])
+
+    def test_a_videos_own_style_wins_over_the_configured_one(self):
+        settings = {"claude_animation_style_preset": "flat-vector"}
+
+        self.assertEqual(claude_animation.style_preset(settings).slug, "flat-vector")
+        self.assertEqual(claude_animation.style_preset(settings, "whiteboard").slug, "whiteboard")
+        self.assertEqual(claude_animation.style_preset(settings, "no-such-style").slug, "flat-vector")
+        self.assertIsNone(claude_animation.style_preset({}, ""))
 
     def test_user_style_replaces_a_built_in_and_bad_files_are_ignored(self):
         built_in, user = tempfile.mkdtemp(), tempfile.mkdtemp()
@@ -764,6 +785,16 @@ class TestClaudeAnimationMaterials(unittest.TestCase):
                 for idea in ideas
             ),
         )
+
+    def test_the_videos_style_reaches_the_plan_and_every_scene(self):
+        _paths, calls, _ = self._run(
+            [self._item("1"), self._item("2"), self._item("3")],
+            plan=self._plan("seed", "coins", "tree"),
+            animation_context={"script": "Words", "style": "ink-wash"},
+        )
+
+        self.assertEqual(self.plan_call.kwargs["style_slug"], "ink-wash")
+        self.assertEqual({call["style_slug"] for call in calls}, {"ink-wash"})
 
     def test_planned_scenes_are_rendered_in_order_with_the_shared_look(self):
         paths, calls, _ = self._run(

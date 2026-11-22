@@ -1,0 +1,43 @@
+name = "Dark Tech Keynote"
+summary = "Black stage, big white type, one glowing gradient accent. Product-launch slide look."
+direction = '''
+- Surface: near-black (#050507) with one very soft glow: a large blurred
+  radial gradient in the accent colour at 25-35% opacity, off-centre.
+- Palette: white #ffffff type, grey #8a8f98 for secondary text, and one
+  accent gradient (violet #7c3aed to cyan #22d3ee, or orange #ff7a18 to pink
+  #ff2d75) used on a single word (background-clip: text), a thin line or a
+  number.
+- Layout is sparse and centred: one statement or one big number per scene,
+  optionally a rounded card (#111318, 1px border rgba(255,255,255,0.1), radius
+  40px) holding a simple bar, ring or icon.
+- Type: Inter 700-900, tight letter-spacing (-3px), 130-220px for the headline,
+  40-48px Inter 400 grey for a caption. At most six words in total.
+- Motion: calm and confident. Text rises 40px while fading in, word by word;
+  numbers count up; the glow drifts slowly the whole time. power3.out only.
+'''
+example = '''
+```css
+#dk-stage { position: absolute; inset: 0; background: #050507; overflow: hidden; }
+#dk-glow { position: absolute; left: 90px; top: 520px; width: 900px; height: 900px; border-radius: 50%; background: radial-gradient(circle, rgba(124,58,237,0.55) 0%, rgba(34,211,238,0.18) 45%, rgba(5,5,7,0) 70%); }
+#dk-cap { position: absolute; left: 0; top: 470px; width: 100%; text-align: center; font: 400 46px Inter, sans-serif; color: #8a8f98; }
+#dk-num { position: absolute; left: 0; top: 560px; width: 100%; text-align: center; font: 900 330px Inter, sans-serif; letter-spacing: -10px; color: #ffffff; }
+#dk-line { position: absolute; left: 340px; top: 990px; width: 400px; height: 8px; border-radius: 4px; background: linear-gradient(90deg, #7c3aed, #22d3ee); }
+#dk-sub { position: absolute; left: 0; top: 1050px; width: 100%; text-align: center; font: 700 90px Inter, sans-serif; letter-spacing: -3px; color: #ffffff; }
+```
+```html
+<div id="dk-stage" class="clip" data-start="0" data-duration="4" data-track-index="0">
+  <div id="dk-glow"></div>
+  <div id="dk-cap">Battery life</div>
+  <div id="dk-num">2x</div>
+  <div id="dk-line"></div>
+  <div id="dk-sub">All day. Twice.</div>
+</div>
+```
+```js
+tl.fromTo("#dk-glow", { x: -160, y: 120, scale: 0.8 }, { x: 160, y: -120, scale: 1.1, duration: 3.9, ease: "sine.inOut" }, 0);
+tl.fromTo("#dk-cap", { opacity: 0, y: 40 }, { opacity: 1, y: 0, duration: 0.7, ease: "power3.out" }, 0.2);
+tl.fromTo("#dk-num", { opacity: 0, y: 60, scale: 0.94 }, { opacity: 1, y: 0, scale: 1, duration: 0.9, ease: "power3.out" }, 0.5);
+tl.fromTo("#dk-line", { scaleX: 0 }, { scaleX: 1, duration: 0.8, ease: "power3.out" }, 1.1);
+tl.fromTo("#dk-sub", { opacity: 0, y: 40 }, { opacity: 1, y: 0, duration: 0.8, ease: "power3.out" }, 1.4);
+```
+'''

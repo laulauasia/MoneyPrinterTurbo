@@ -842,6 +842,7 @@ def get_video_materials(
             generation_options["animation_context"] = {
                 "subject": str(params.video_subject or ""),
                 "script": str(animation_script or params.video_script or ""),
+                "style": str(params.animation_style or ""),
                 # Scene lengths follow these timings when the clips will be
                 # played whole and in order.
                 "subtitle_path": (

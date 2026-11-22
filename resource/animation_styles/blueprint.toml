@@ -1,0 +1,47 @@
+name = "Blueprint"
+summary = "White technical line drawing on blueprint blue, with a grid, dimension lines and labels."
+direction = '''
+- Surface: blueprint blue (#0b4f9e) with a fine grid (lines of rgba(255,255,255,0.12)
+  every 60px, drawn with repeating linear gradients).
+- Draw in white only (#ffffff, and rgba(255,255,255,0.6) for secondary lines):
+  outlines 5-7px, construction and dimension lines 3px, dashed centre lines.
+  No fills except very faint white (opacity 0.08) to mark a part.
+- Vocabulary of a technical drawing: front or side elevations, circles with
+  centre crosses, dimension lines with end ticks and a number, leader lines to
+  short labels, a title block in a corner.
+- Type: JetBrains Mono 700, upper case, white, small labels (40-52px) plus one
+  heading of at most three words.
+- Motion: the drawing is plotted: construction lines first, then outlines draw
+  (strokeDashoffset 1 to 0), then dimensions extend and labels type on. After
+  that a part rotates slowly or a measuring line sweeps.
+'''
+example = '''
+```css
+#bp-sheet { position: absolute; inset: 0; background-color: #0b4f9e; background-image: linear-gradient(rgba(255,255,255,0.12) 2px, transparent 2px), linear-gradient(90deg, rgba(255,255,255,0.12) 2px, transparent 2px); background-size: 60px 60px; }
+#bp-art { position: absolute; left: 0; top: 0; width: 1080px; height: 1920px; }
+#bp-art .bp-line { fill: none; stroke: #ffffff; stroke-width: 6; stroke-dasharray: 1; }
+#bp-art .bp-thin { fill: none; stroke: #ffffff; stroke-opacity: 0.6; stroke-width: 3; stroke-dasharray: 1; }
+#bp-head { position: absolute; left: 90px; top: 250px; font: 700 100px "JetBrains Mono", monospace; color: #ffffff; }
+#bp-dim { position: absolute; left: 0; top: 1320px; width: 100%; text-align: center; font: 700 48px "JetBrains Mono", monospace; color: #ffffff; }
+```
+```html
+<div id="bp-sheet" class="clip" data-start="0" data-duration="4" data-track-index="0">
+  <svg id="bp-art" viewBox="0 0 1080 1920">
+    <path class="bp-thin" d="M540 520 L540 1240 M180 880 L900 880" pathLength="1" />
+    <circle class="bp-line" cx="540" cy="880" r="300" pathLength="1" />
+    <circle class="bp-line" cx="540" cy="880" r="110" pathLength="1" />
+    <g id="bp-spokes"><path class="bp-line" d="M540 770 L540 580 M635 935 L800 1030 M445 935 L280 1030" pathLength="1" /></g>
+    <path id="bp-rule" class="bp-thin" d="M240 1270 L840 1270 M240 1245 L240 1295 M840 1245 L840 1295" pathLength="1" />
+  </svg>
+  <div id="bp-head">WHEEL A-01</div>
+  <div id="bp-dim">600 MM</div>
+</div>
+```
+```js
+tl.fromTo(".bp-thin", { strokeDashoffset: 1 }, { strokeDashoffset: 0, duration: 0.7, ease: "power1.inOut", stagger: 0.9 }, 0);
+tl.fromTo(".bp-line", { strokeDashoffset: 1 }, { strokeDashoffset: 0, duration: 0.9, ease: "power1.inOut", stagger: 0.25 }, 0.4);
+tl.fromTo("#bp-head", { opacity: 0 }, { opacity: 1, duration: 0.3 }, 0.3);
+tl.fromTo("#bp-dim", { opacity: 0 }, { opacity: 1, duration: 0.3 }, 1.6);
+tl.fromTo("#bp-spokes", { rotation: 0, svgOrigin: "540 880" }, { rotation: 120, duration: 2.1, ease: "power1.inOut" }, 1.7);
+```
+'''

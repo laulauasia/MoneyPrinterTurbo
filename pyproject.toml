@@ -91,7 +91,7 @@ skip_covered = true
 [tool.hatch.build.targets.wheel]
 packages = ["app", "webui"]
 
-# 字体保留中英文默认字体和越南语字体。两个大体积备用字重不进入安装包，
+# 字体保留中英文默认字体、越南语字体和体积较小的字幕风格字体。两个大体积备用字重不进入安装包，
 # 避免 wheel 超过 PyPI 默认文件大小限制；源码版的字体文件保持原样。
 [tool.hatch.build.targets.wheel.force-include]
 "cli.py" = "app/cli.py"
@@ -103,6 +103,32 @@ packages = ["app", "webui"]
 "resource/fonts/Charm-Bold.ttf" = "app/_assets/resource/fonts/Charm-Bold.ttf"
 "resource/fonts/Charm-Regular.ttf" = "app/_assets/resource/fonts/Charm-Regular.ttf"
 "resource/fonts/UTM Kabel KT.ttf" = "app/_assets/resource/fonts/UTM Kabel KT.ttf"
+"resource/fonts/AlfaSlabOne-Regular.ttf" = "app/_assets/resource/fonts/AlfaSlabOne-Regular.ttf"
+"resource/fonts/Anton-Regular.ttf" = "app/_assets/resource/fonts/Anton-Regular.ttf"
+"resource/fonts/ArchivoBlack-Regular.ttf" = "app/_assets/resource/fonts/ArchivoBlack-Regular.ttf"
+"resource/fonts/Bangers-Regular.ttf" = "app/_assets/resource/fonts/Bangers-Regular.ttf"
+"resource/fonts/BebasNeue-Regular.ttf" = "app/_assets/resource/fonts/BebasNeue-Regular.ttf"
+"resource/fonts/BlackHanSans-Regular.ttf" = "app/_assets/resource/fonts/BlackHanSans-Regular.ttf"
+"resource/fonts/Bungee-Regular.ttf" = "app/_assets/resource/fonts/Bungee-Regular.ttf"
+"resource/fonts/Chewy-Regular.ttf" = "app/_assets/resource/fonts/Chewy-Regular.ttf"
+"resource/fonts/Creepster-Regular.ttf" = "app/_assets/resource/fonts/Creepster-Regular.ttf"
+"resource/fonts/Kanit-Black.ttf" = "app/_assets/resource/fonts/Kanit-Black.ttf"
+"resource/fonts/Kanit-Bold.ttf" = "app/_assets/resource/fonts/Kanit-Bold.ttf"
+"resource/fonts/LilitaOne-Regular.ttf" = "app/_assets/resource/fonts/LilitaOne-Regular.ttf"
+"resource/fonts/Lobster-Regular.ttf" = "app/_assets/resource/fonts/Lobster-Regular.ttf"
+"resource/fonts/LuckiestGuy-Regular.ttf" = "app/_assets/resource/fonts/LuckiestGuy-Regular.ttf"
+"resource/fonts/Montserrat-Black.ttf" = "app/_assets/resource/fonts/Montserrat-Black.ttf"
+"resource/fonts/Montserrat-ExtraBold.ttf" = "app/_assets/resource/fonts/Montserrat-ExtraBold.ttf"
+"resource/fonts/Pacifico-Regular.ttf" = "app/_assets/resource/fonts/Pacifico-Regular.ttf"
+"resource/fonts/PermanentMarker-Regular.ttf" = "app/_assets/resource/fonts/PermanentMarker-Regular.ttf"
+"resource/fonts/Poppins-Black.ttf" = "app/_assets/resource/fonts/Poppins-Black.ttf"
+"resource/fonts/Poppins-Bold.ttf" = "app/_assets/resource/fonts/Poppins-Bold.ttf"
+"resource/fonts/Poppins-ExtraBold.ttf" = "app/_assets/resource/fonts/Poppins-ExtraBold.ttf"
+"resource/fonts/PressStart2P-Regular.ttf" = "app/_assets/resource/fonts/PressStart2P-Regular.ttf"
+"resource/fonts/Righteous-Regular.ttf" = "app/_assets/resource/fonts/Righteous-Regular.ttf"
+"resource/fonts/RussoOne-Regular.ttf" = "app/_assets/resource/fonts/RussoOne-Regular.ttf"
+"resource/fonts/TitanOne-Regular.ttf" = "app/_assets/resource/fonts/TitanOne-Regular.ttf"
+"resource/fonts/licenses" = "app/_assets/resource/fonts/licenses"
 "resource/songs" = "app/_assets/resource/songs"
 "resource/public" = "app/_assets/resource/public"
 
@@ -119,6 +145,32 @@ include = [
     "/resource/fonts/BeVietnamPro-Bold.ttf", "/resource/fonts/BeVietnamPro-Medium.ttf",
     "/resource/fonts/Charm-Bold.ttf", "/resource/fonts/Charm-Regular.ttf",
     "/resource/fonts/UTM Kabel KT.ttf",
+    "/resource/fonts/AlfaSlabOne-Regular.ttf",
+    "/resource/fonts/Anton-Regular.ttf",
+    "/resource/fonts/ArchivoBlack-Regular.ttf",
+    "/resource/fonts/Bangers-Regular.ttf",
+    "/resource/fonts/BebasNeue-Regular.ttf",
+    "/resource/fonts/BlackHanSans-Regular.ttf",
+    "/resource/fonts/Bungee-Regular.ttf",
+    "/resource/fonts/Chewy-Regular.ttf",
+    "/resource/fonts/Creepster-Regular.ttf",
+    "/resource/fonts/Kanit-Black.ttf",
+    "/resource/fonts/Kanit-Bold.ttf",
+    "/resource/fonts/LilitaOne-Regular.ttf",
+    "/resource/fonts/Lobster-Regular.ttf",
+    "/resource/fonts/LuckiestGuy-Regular.ttf",
+    "/resource/fonts/Montserrat-Black.ttf",
+    "/resource/fonts/Montserrat-ExtraBold.ttf",
+    "/resource/fonts/Pacifico-Regular.ttf",
+    "/resource/fonts/PermanentMarker-Regular.ttf",
+    "/resource/fonts/Poppins-Black.ttf",
+    "/resource/fonts/Poppins-Bold.ttf",
+    "/resource/fonts/Poppins-ExtraBold.ttf",
+    "/resource/fonts/PressStart2P-Regular.ttf",
+    "/resource/fonts/Righteous-Regular.ttf",
+    "/resource/fonts/RussoOne-Regular.ttf",
+    "/resource/fonts/TitanOne-Regular.ttf",
+    "/resource/fonts/licenses",
 ]
 
 [tool.uv]
